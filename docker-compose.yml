@@ -1,0 +1,71 @@
+services:
+    app:
+        build:
+            args:
+                user: harry
+                uid: 1000
+            context: ./
+            dockerfile: Dockerfile.swooledev
+        working_dir: /var/www/
+        restart: unless-stopped
+        ports:
+            - "8001:8000" # Menghindari konflik port dengan Nginx
+        environment:
+            - COMPOSER_MEMORY_LIMIT=-1
+        volumes:
+            - ./:/var/www
+        networks:
+            - harrynet
+
+    # swoole:
+    #     build:
+    #         args:
+    #             user: harry
+    #             uid: 1000
+    #         context: ./
+    #         dockerfile: Dockerfile.swooledev
+    #     working_dir: /var/www/
+    #     restart: unless-stopped
+    #     ports:
+    #         - "8001:8000" # Menghindari konflik port dengan Nginx
+    #     environment:
+    #         - COMPOSER_MEMORY_LIMIT=-1
+    #     volumes:
+    #         - ./:/var/www
+    #     networks:
+    #         - harrynet
+
+    nginx:
+        image: nginx:alpine
+        container_name: nginx_tokobangunan
+        restart: unless-stopped
+        tty: true
+        links:
+            - app
+        depends_on:
+            - app
+        ports:
+            # - "8182:80"
+            - "8183:8000"
+        volumes:
+            - ./:/var/www
+            - ./docker-compose/nginx:/etc/nginx/conf.d
+        networks:
+            - harrynet
+
+    # watcher:
+    #     image: node:18
+    #     container_name: chokidar-watcher
+    #     working_dir: /var/www/
+    #     volumes:
+    #         - .:/var/www
+    #     command: node /var/www/watcher.js
+    #     healthcheck:
+    #         test: ["CMD-SHELL", "pgrep -f watcher.js || exit 1"]
+    #         interval: 10s
+    #         timeout: 2s
+    #         retries: 3
+
+networks:
+    harrynet:
+        driver: bridge

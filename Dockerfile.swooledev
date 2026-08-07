@@ -1,0 +1,84 @@
+FROM php:8.3-fpm
+
+# Arguments defined in docker-compose.yml
+ARG user
+ARG uid
+
+# Update sistem dan instal dependencies yang diperlukan
+RUN apt-get update && apt-get install -y \
+supervisor \
+    git \
+    curl \
+    libssl-dev \
+    libcurl4-openssl-dev \
+    libpng-dev \
+    libjpeg-dev \
+    libfreetype6-dev \
+    libonig-dev \
+    libzip-dev \
+    zlib1g-dev \
+    pkg-config \
+    # libmcrypt-dev \
+    # nodejs \
+    # npm \
+    # && npm install \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install -j$(nproc) gd mbstring zip opcache
+
+
+RUN docker-php-ext-install pdo pdo_mysql
+# Instal ekstensi PECL untuk Swoole
+RUN pecl install swoole \
+    && docker-php-ext-enable swoole
+
+# mengaktifkan modul pcntl
+RUN docker-php-ext-install pcntl
+
+# Bersihkan file cache untuk mengurangi ukuran image
+RUN apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# COPY --from=node-builder /app/node_modules /var/www/node_modules
+
+# Get latest Composer & install composer
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+
+# TODO not use node in producation
+# Instal Node.js dan npm (versi LTS)
+# RUN apt-get install -y nodejs \
+#     && npm install -g npm@latest \
+#     && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+
+# Salin file konfigurasi Supervisor
+COPY docker-compose/php/supervisord/supervisord.conf /etc/supervisor/supervisord.conf
+
+# Buat direktori untuk file Supervisor
+# RUN mkdir -p /var/log/supervisor
+
+# Buat direktori untuk file Supervisor dan atur hak akses
+# RUN mkdir -p /var/log/supervisor && chown -R www:www /var/log/supervisor
+
+# Tambahkan konfigurasi PHP jika diperlukan
+COPY ./docker-compose/php/local.ini /usr/local/etc/php/
+COPY docker-compose/php/supervisord/supervisord.conf /etc/
+
+RUN groupadd -g 1000 www
+RUN useradd -u 1000 -ms /bin/bash -g www www
+
+COPY . /var/www
+
+# Salin aplikasi dan atur kepemilikan
+COPY --chown=www:www . /var/www
+
+USER www
+
+# Expose port (disesuaikan dengan Swoole/Laravel Octane)
+EXPOSE 8000
+
+WORKDIR "/var/www/"
+# CMD ["php-fpm"]
+# Jalankan Supervisor
+ENTRYPOINT [ "supervisord", "--nodaemon", "--configuration", "/etc/supervisord.conf" ]
+
+# Jalankan Supervisor untuk mengawasi proses
+# CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/supervisord.conf"]
