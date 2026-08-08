@@ -1,0 +1,42 @@
+FROM php:8.3-fpm
+
+ARG user
+ARG uid
+
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    libssl-dev \
+    libcurl4-openssl-dev \
+    libpng-dev \
+    libjpeg-dev \
+    libfreetype6-dev \
+    libonig-dev \
+    libzip-dev \
+    zlib1g-dev \
+    pkg-config \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install -j$(nproc) gd mbstring zip pdo pdo_mysql
+
+# Clean up
+RUN apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Composer
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+
+# User setup
+RUN groupadd -g ${uid} ${user} && \
+    useradd -u ${uid} -ms /bin/bash -g ${user} ${user}
+
+USER ${user}
+
+WORKDIR /var/www
+
+# Expose for php-fpm (internal, nginx uses it)
+EXPOSE 8000
+
+COPY docker-compose/php/www.conf /usr/local/etc/php-fpm.d/www.conf
+
+# Default command
+CMD ["php-fpm", "-F"]

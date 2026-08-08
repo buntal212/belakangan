@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Master;
 use App\Helpers\FormatingHelper;
 use App\Http\Controllers\Controller;
 use App\Models\Barang;
+use App\Models\Beban;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -49,4 +50,23 @@ class SelectController extends Controller
 
        return new JsonResponse($data);
     }
+
+    public function get_jenis()
+    {
+       $data = DB::table('jeniskeramiks')
+       ->select('kodejenis', 'nama', 'flaging')
+       ->get();
+
+       return new JsonResponse($data);
+    }
+
+    public function selectbeban()
+    {
+       $data = DB::table('bebans')
+       ->select('kodebeban', 'beban')
+       ->get();
+
+       return new JsonResponse($data);
+    }
+
 }

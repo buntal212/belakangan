@@ -3,7 +3,7 @@ use App\Http\Controllers\Api\Master\SupplierController;
 use Illuminate\Support\Facades\Route;
 
 Route::group([
-    //'middleware' => 'auth:api',
+    'middleware' => 'auth:api',
     'prefix' => 'master/supplier'
 ], function () {
     Route::get('/list', [SupplierController::class, 'list']);

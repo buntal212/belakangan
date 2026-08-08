@@ -21,6 +21,7 @@ return new class extends Migration
             $table->double('diskon', 24, 2)->default(0);
             $table->double('subtotal', 24, 2)->default(0);
             $table->unsignedBigInteger('stok_id')->nullable();
+            $table->double('retur', 24, 2)->default(0);
             $table->timestamps();
         });
     }

@@ -6,7 +6,7 @@ ARG uid
 
 # Update sistem dan instal dependencies yang diperlukan
 RUN apt-get update && apt-get install -y \
-supervisor \
+    supervisor \
     git \
     curl \
     libssl-dev \
@@ -28,8 +28,8 @@ supervisor \
 
 RUN docker-php-ext-install pdo pdo_mysql
 # Instal ekstensi PECL untuk Swoole
-RUN pecl install swoole \
-    && docker-php-ext-enable swoole
+#RUN pecl install swoole \
+#    && docker-php-ext-enable swoole
 
 # mengaktifkan modul pcntl
 RUN docker-php-ext-install pcntl
@@ -76,9 +76,9 @@ USER www
 EXPOSE 8000
 
 WORKDIR "/var/www/"
-# CMD ["php-fpm"]
+CMD ["php-fpm"]
 # Jalankan Supervisor
-ENTRYPOINT [ "supervisord", "--nodaemon", "--configuration", "/etc/supervisord.conf" ]
+#ENTRYPOINT [ "supervisord", "--nodaemon", "--configuration", "/etc/supervisord.conf" ]
 
 # Jalankan Supervisor untuk mengawasi proses
 # CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/supervisord.conf"]

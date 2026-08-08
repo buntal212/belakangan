@@ -3,6 +3,7 @@
 namespace App\Models\Transaksi\Penerimaan;
 
 use App\Models\Supplier;
+use App\Models\Transaksi\Pembayaranhutang\pembayaranhutang_r;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -25,5 +26,10 @@ class Penerimaan_h extends Model
     public function orderheder()
     {
         return  $this->hasOne(OrderPembelian_h::class, 'noorder', 'noorder');
+    }
+
+      public function rincianpembayaranhutang()
+    {
+        return  $this->hasMany(pembayaranhutang_r::class, 'nopenerimaan', 'nopenerimaan');
     }
 }

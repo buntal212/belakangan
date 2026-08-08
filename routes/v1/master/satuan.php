@@ -4,7 +4,7 @@ use App\Http\Controllers\Api\Master\SatuanController;
 use Illuminate\Support\Facades\Route;
 
 Route::group([
-    //'middleware' => 'auth:api',
+    'middleware' => 'auth:api',
     'prefix' => 'master/satuan'
 ], function () {
     Route::get('/listsatuan', [SatuanController::class, 'listsatuan']);

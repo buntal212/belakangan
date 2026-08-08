@@ -7,11 +7,13 @@ use App\Http\Controllers\Controller;
 use App\Models\Pelanggan;
 use App\Models\Transaksi\Penjualan\HeaderCicilan;
 use App\Models\Transaksi\Penjualan\HeaderPenjualan;
+use App\Models\Transaksi\Penjualan\HeaderReturPenjualan;
 use App\Models\Transaksi\Penjualan\PembayaranCicilan;
 use App\Models\User;
 use GuzzleHttp\Psr7\Header;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class CicilanController extends Controller
 {
@@ -22,22 +24,32 @@ class CicilanController extends Controller
             'pelanggan' => function ($q) {
                 $q->with([
                     'headerPenjualan' => function ($q) {
-                        $q->whereIn('flag', ['2', '3', '4'])
+                        $q->whereIn('flag', ['2', '3', '4', '7', '8'])
                             ->with([
-                                'cicilan'
+                                'cicilan',
+                                'headerRetur' => function ($q) {
+                                    $q->where('status', '!=', '');
+                                }
                             ]);
                     },
                 ]);
             },
             'sales',
             'cicilan',
+            'keterangan',
             'detail.masterBarang',
+            'headerRetur' => function ($q) {
+                $q->where('status', '!=', '')
+                    ->with([
+                        'detail'
+                    ]);
+            },
         ])
             ->where('no_penjualan', 'like', '%' . request('q') . '%')
             ->when(
                 request('flag') == 'semua',
                 function ($q) {
-                    $q->whereIn('flag', ['2', '3', '4']);
+                    $q->whereIn('flag', ['2', '3', '4', '7', '8']);
                 },
                 function ($q) {
                     $q->where('flag', request('flag'));
@@ -75,6 +87,12 @@ class CicilanController extends Controller
             'sales',
             'cicilan',
             'detail.masterBarang',
+            'headerRetur' => function ($q) {
+                $q->where('status', '!=', '')
+                    ->with([
+                        'detail'
+                    ]);
+            },
         ]);
         return new JsonResponse([
             'message' => 'Berhasil Membawa Nota',
@@ -104,6 +122,12 @@ class CicilanController extends Controller
             'sales',
             'cicilan',
             'detail.masterBarang',
+            'headerRetur' => function ($q) {
+                $q->where('status', '!=', '')
+                    ->with([
+                        'detail'
+                    ]);
+            },
         ]);
         return new JsonResponse([
             'message' => $message,
@@ -113,6 +137,20 @@ class CicilanController extends Controller
     }
 
     public function newSimpanCicilan(Request $request)
+    {
+        try {
+            DB::beginTransaction();
+            $data = $this->ackSimpanCicilan($request);
+            DB::commit();
+            return new JsonResponse($data, 200);
+        } catch (\Throwable $th) {
+            DB::rollBack();
+            return new JsonResponse([
+                'message' => $th->getMessage(),
+            ], 410);
+        }
+    }
+    public static function ackSimpanCicilan($request)
     {
         $request->validate([
             'jumlah' => 'required',
@@ -127,21 +165,28 @@ class CicilanController extends Controller
         if ($request->jumlah <= 0) {
             return new JsonResponse(['message' => 'Jumlah Cicilan Tidak Boleh 0'], 410);
         }
+
+
         // kemmbalikan flag menjadi 2
         HeaderPenjualan::find($request->id)->update(['flag' => '2']);
-        $hutang = HeaderPenjualan::where('pelanggan_id', $request->pelanggan_id)->whereIn('flag', ['2', '3', '4'])->orderBy('no_penjualan', 'asc')->get();
+        $hutang = HeaderPenjualan::where('pelanggan_id', $request->pelanggan_id)->whereIn('flag', ['2', '3', '4'])
+            ->orderBy('no_penjualan', 'asc')
+            ->get();
+
         $jumlahCicilan = $request->jumlah;
         $headerCicilan = HeaderCicilan::create([
             'pelanggan_id' => $request->pelanggan_id,
             'sales_id' => $request->sales_id,
+            'cara_bayar' => $request->cara_bayar,
             'jumlah' => $jumlahCicilan,
             'tgl_bayar' => date('Y-m-d H:i:s'),
         ]);
         $dibayar = [];
         foreach ($hutang as $key) {
             if ($jumlahCicilan <= 0) break;
+            $retur = HeaderReturPenjualan::where('no_penjualan', $key->no_penjualan)->where('status', '=', '1')->sum('total');
             $cicilan = PembayaranCicilan::where('no_penjualan', $key->no_penjualan)->sum('jumlah');
-            $sisa = (float)$key->total - (float)$key->total_diskon - $cicilan;
+            $sisa = (float)$key->total - (float)$key->bayar - (float)$cicilan - (float)$retur;
             $pengurang = min($sisa, $jumlahCicilan);
 
             PembayaranCicilan::create([
@@ -165,12 +210,78 @@ class CicilanController extends Controller
             }
             $jumlahCicilan -= $pengurang;
         }
-        return new JsonResponse([
-            'message' => 'Berhasil Menyimpan Cicilan',
-            'hutang' => $hutang,
-            'dibayar' => $dibayar,
-            'req' => $request->all(),
-        ], 200);
+        DB::commit();
+        return
+            [
+                'message' => 'Berhasil Menyimpan Cicilan',
+                'hutang' => $hutang,
+                'dibayar' => $dibayar,
+                'req' => $request->all(),
+            ];
+    }
+
+    public function simpanPelunasan(Request $request)
+    {
+
+        try {
+            DB::beginTransaction();
+            $headerPenjualan = HeaderPenjualan::find($request->id);
+            if (!$headerPenjualan) {
+                return new JsonResponse([
+                    'message' => 'Terjadi Kesalahan, Data penjualan tidak ditemukan '
+                ], 410);
+            }
+            $jumlahBayar = $request->jumlah;
+            $jumlah = (float)$headerPenjualan->total - (float)$headerPenjualan->bayar; // ini jumlah hutang
+            if ((float) $jumlah != (float) $jumlahBayar) {
+                if ($headerPenjualan->pelanggan_id == null) {
+                    throw new \Exception('Karena bukan pelanggan, maka harus lunas dan jumlah pembayaran harus pas');
+                } else if ($headerPenjualan->sales_id == null) {
+                    throw new \Exception('Karena Sales tidak ditemukan, maka harus lunas dan jumlah pembayaran harus pas');
+                } else {
+                    $result = $this->ackSimpanCicilan($request);
+                }
+            } else {
+                // bisa jadi ada pelanggan, bisa jadi tidak ada
+
+                $headerCicilan = HeaderCicilan::create([
+                    'pelanggan_id' => $request->pelanggan_id,
+                    'sales_id' => $request->sales_id,
+                    'cara_bayar' => $request->cara_bayar,
+                    'jumlah' => $jumlahBayar,
+                    'tgl_bayar' => date('Y-m-d H:i:s'),
+                ]);
+                if (!$headerCicilan) {
+                    return new JsonResponse([
+                        'message' => 'Terjadi Kesalahan, Data tidak tersimpan '
+                    ], 410);
+                }
+                PembayaranCicilan::create([
+                    'no_penjualan' => $request->no_penjualan,
+                    'tgl_bayar' => $headerCicilan->tgl_bayar,
+                    'header_ciclan_id' => $headerCicilan->id,
+                    'jumlah' => $jumlahBayar,
+                ]);
+
+                $headerPenjualan->update([
+                    'flag' => '5',
+                ]);
+            }
+            DB::commit();
+            return new JsonResponse([
+                'message' => 'Berhasil Menyimpan Pelunasan',
+                'req' => $request->all(),
+                'result' => $result ?? null
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return new JsonResponse([
+                'message' => 'Terjadi Kesalahan ' . $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+
+            ], 410);
+        }
     }
     public function simpanCicilan(Request $request)
     {
@@ -216,6 +327,12 @@ class CicilanController extends Controller
             'sales',
             'cicilan',
             'detail.masterBarang',
+            'headerRetur' => function ($q) {
+                $q->where('status', '!=', '')
+                    ->with([
+                        'detail'
+                    ]);
+            },
         ]);
         return new JsonResponse([
             'message' => $message,

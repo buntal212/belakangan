@@ -11,5 +11,10 @@ class AdminSub extends Model
     protected $table = 'admin_subs';
     protected $guarded = ['id'];
 
-    
+    public function menus()
+    {
+        return $this->belongsTo(AdminMenu::class, 'menu_id');
+    }
+
+
 }

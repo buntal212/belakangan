@@ -15,4 +15,8 @@ class stok extends Model
     {
         return  $this->hasOne(Barang::class, 'kdbarang', 'kdbarang');
     }
+    public function barang()
+    {
+        return  $this->hasOne(Barang::class, 'kodebarang', 'kdbarang');
+    }
 }

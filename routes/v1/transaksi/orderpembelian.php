@@ -4,10 +4,12 @@ use App\Http\Controllers\Api\Transaksi\Penerimaan\OrderPenerimaanController;
 use Illuminate\Support\Facades\Route;
 
 Route::group([
-    //'middleware' => 'auth:api',
+    'middleware' => 'auth:api',
     'prefix' => 'transaksi/orderpembelian'
 ], function () {
     Route::post('/hapusrincian', [OrderPenerimaanController::class, 'hapusrincianorder']);
+     Route::post('/hapusall', [OrderPenerimaanController::class, 'hapusall']);
+
     Route::post('/simpan', [OrderPenerimaanController::class, 'simpan']);
     Route::get('/getlistorder', [OrderPenerimaanController::class, 'getlistorder']);
 

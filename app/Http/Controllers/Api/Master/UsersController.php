@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api\Master;
 
 use App\Http\Controllers\Controller;
+use App\Models\Admin\AdminSub;
+use App\Models\HakaksesMenu;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -12,11 +14,14 @@ class UsersController extends Controller
 {
     public function get_user()
     {
-        $data = User::when(request('q') !== '' || request('q') !== null, function($x){
+        $data = User::where('username','!=' ,'sa')
+        ->whereNotNull('jabatan')
+        ->when(request('q') , function($x){
             $x->where('nama', 'like', '%' . request('q') . '%')
               ->orWhere('username','like', '%' . request('q') . '%')
               ->orWhere('jabatan','like', '%' . request('q') . '%');
         })
+
         ->orderBy('id', 'desc')
         ->simplePaginate(request('per_page'));
         return new JsonResponse($data);
@@ -93,5 +98,58 @@ class UsersController extends Controller
         $removedata->delete();
 
         return new JsonResponse(['message' => 'Berhasil Dihapus'], 200);
+    }
+
+    public function getdatasetiing()
+    {
+        $data = User::with(
+            [
+                'hakakses.menus',
+                'hakakses.subs'
+            ]
+        )
+        ->where('username', '<>', 'sa')
+        // ->when(request('q') !== '' || request('q') !== null, function($x){
+        //     $x->where('nama', 'like', '%' . request('q') . '%')
+        //       ->orWhere('username','like', '%' . request('q') . '%')
+        //       ->orWhere('jabatan','like', '%' . request('q') . '%');
+        // })
+
+        ->orderBy('id', 'desc')
+        ->get();
+        return new JsonResponse($data);
+    }
+
+    public function getmenu()
+    {
+        $data = AdminSub::with('menus')->get();
+        return new JsonResponse($data);
+    }
+
+    public function savehakakses(Request $request)
+    {
+        $cek = HakaksesMenu::where('submenu_id', $request->submenu)->where('user_id', $request->userid)->count();
+        if($cek > 0)
+        {
+            return new JsonResponse(['message' => 'Data Sudah Ada'], 500);
+        }
+        $simpan = HakaksesMenu::create(
+            [
+                'user_id' => $request->userid,
+                'menu_id' => $request->menu,
+                'submenu_id' => $request->submenu
+            ]
+        );
+
+        $data = User::with(
+            [
+                'hakakses.menus',
+                'hakakses.subs'
+            ]
+        )
+        ->where('id', $request->userid)
+        ->orderBy('id', 'desc')
+        ->get();
+        return new JsonResponse(['message' => 'Data Berhasil Disimpan...!!!', 'result' => $data], 200);
     }
 }

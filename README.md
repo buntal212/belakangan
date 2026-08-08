@@ -1,14 +1,14 @@
 # About
 
-CARA MENJALANKANNYA 
+CARA MENJALANKANNYA
 
 ## Daftar Isi
 
-- [Setup](#setup)
-    - [1. Copy files](#step-1-copy-files-in-your-directory)
-    - [2. Execute Docker](#step-2-execute-docker)
-    - [3. Run Composer](#step-3-install-composer-dependencies)
-- [Enhancements](#enhancements)
+-   [Setup](#setup)
+    -   [1. Copy files](#step-1-copy-files-in-your-directory)
+    -   [2. Execute Docker](#step-2-execute-docker)
+    -   [3. Run Composer](#step-3-install-composer-dependencies)
+-   [Enhancements](#enhancements)
 
 # Setup
 
@@ -26,38 +26,46 @@ Copy all files except `.env` and `readme.md` in your current project folder. Ove
 
 Jalankan container
 
-  ```sh
-  docker-compose up -d --build
-  ```
+```sh
+docker-compose up -d --build
+```
+
+untuk build tanpa swoole
+
+```sh
+docker compose -f docker-compose.fpm.yml build
+
+docker compose -f docker-compose.fpm.yml up -d
+
+```
 
 Ini mungkin memerlukan waktu beberapa saat. Setelah container disiapkan, periksa status dengan ...
 
-  ```sh
-  docker-compose ps
-  ```
+```sh
+docker-compose ps
+```
 
 Anda akan melihat tiga container sedang berjalan.
-
 
 ## Step 3: Install Composer dependencies
 
 Bash ke dalam kontainer Anda:
 
-  ```sh
-  docker-compose exec app bash
-  ```
+```sh
+docker-compose exec app bash
+```
 
 Instal dependensi composer (ini mungkin memerlukan waktu beberapa saat):
 
-  ```sh
-  composer install
-  ```
+```sh
+composer install
+```
 
 and finally generate a key
 
-  ```sh
-  php artisan key:generate
-  ```
+```sh
+php artisan key:generate
+```
 
 :tada: Selamat. Aplikasi Anda sekarang dapat diakses di `localhost:8182`
 
@@ -65,17 +73,17 @@ and finally generate a key
 
 Saya suka menggunakan alias berikut untuk menghindari masuk ke
 
-  ```
-  alias phpunit="docker-compose exec app vendor/bin/phpunit"
-  alias artisan="docker-compose exec app php artisan"
-  alias composer="docker-compose exec app composer"
-  ```
+```
+alias phpunit="docker-compose exec app vendor/bin/phpunit"
+alias artisan="docker-compose exec app php artisan"
+alias composer="docker-compose exec app composer"
+```
 
 Selain itu, jika Anda ingin agar kontainer laravel docker Anda tetap berjalan setelah komputer Anda dihidupkan ulang, Anda dapat menambahkan
 
-  ```
-  restart: unless-stopped
-  ```
+```
+restart: unless-stopped
+```
 
 ke setiap layanan Anda (app,db,nginx).
 
@@ -83,21 +91,19 @@ ke setiap layanan Anda (app,db,nginx).
 
 untuk melihat apakah ekstensi swoole aktif pada php
 
-  ```sh
-  php -m | grep swoole
-  ```
-
+```sh
+php -m | grep swoole
+```
 
 untuk melihat apakah ekstensi pcntl aktif pada php
 
 ```sh
 php -m | grep pcntl
 ```
+
 untuk mereload octane
 
 ```sh
   docker-compose exec app bash
   php artisan octane:reload
 ```
-
-

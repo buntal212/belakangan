@@ -25,6 +25,14 @@ class PelangganController extends Controller
         return new JsonResponse($list);
     }
 
+    public function listpelangganall()
+    {
+        $list =  Pelanggan::whereNull('flaging')
+        ->orderBy('nama', 'asc')
+        ->get();
+        return new JsonResponse($list);
+    }
+
     public function simpan(Request $request)
     {
         if($request->kodeplgn === '' || $request->kodeplgn === null)

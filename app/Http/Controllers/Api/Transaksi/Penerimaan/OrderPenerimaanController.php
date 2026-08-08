@@ -9,6 +9,7 @@ use App\Models\Transaksi\Penerimaan\OrderPembelian_r;
 use App\Models\Transaksi\Penerimaan\Penerimaan_h;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
 class OrderPenerimaanController extends Controller
@@ -38,7 +39,8 @@ class OrderPenerimaanController extends Controller
                 ],
                 [
                     'tglorder' => date('Y-m-d H:i:s'),
-                    'kdsuplier' => $request->kdsuplier
+                    'kdsuplier' => $request->kdsuplier,
+                    'user' => Auth::id(),
                 ]
             );
             $jumlahpo_k = $request->jumlah * $request->isi;
@@ -54,7 +56,7 @@ class OrderPenerimaanController extends Controller
                     'isi' => $request->isi,
                     'hargapo' => $request->harga,
                     'total' => $total,
-                    'user' => '',
+                    'user' => Auth::id(),
                 ]
             );
 
@@ -75,16 +77,28 @@ class OrderPenerimaanController extends Controller
 
     public function getlistorder()
     {
-        $list = OrderPembelian_h::with(
-            [
-                'suplier',
-                'rinci' => function($rinci){
-                    $rinci->select('*',DB::raw('(jumlahpo*hargapo) as subtotal'))
-                    ->with(['mbarang']);
-                }
-            ]
-        )
-        // ->orderBy('id', 'desc')
+        $from = request('from').' 00:00:00';
+        $to = request('to').' 23:59:59';
+
+        $list = OrderPembelian_h::select('orderpembelian_h.*','orderpembelian_h.kdsuplier','suppliers.kodesupl','suppliers.nama')
+        ->leftJoin('suppliers', 'orderpembelian_h.kdsuplier', '=', 'suppliers.kodesupl')
+        ->with([
+            'suplier',
+            'rinci' => function($rinci){
+                $rinci->select('*', DB::raw('(jumlahpo*hargapo) as subtotal'))
+                ->with(['mbarang']);
+            }
+        ])
+        ->whereBetween('orderpembelian_h.tglorder', [
+            $from,
+            $to
+        ])
+        ->when(request('q'), function ($query) {
+            $query->where(function($q) {
+                $q->where('orderpembelian_h.noorder', 'like', '%' . request('q') . '%')
+                  ->orWhere('suppliers.nama', 'like', '%' . request('q') . '%');
+            });
+        })
         ->simplePaginate(request('per_page'));
         return new JsonResponse($list);
     }
@@ -167,9 +181,27 @@ class OrderPenerimaanController extends Controller
             [
                 'suplier',
                 'rinci' => function($rinci){
-                    $rinci->select('*','jumlahpo as jumlahpox','hargapo as hargafix',DB::raw('(jumlahpo*hargapo) as subtotal'))
-                    ->with(['mbarang']);
-                },
+                    $rinci->select('orderpembelian_r.*', 'jumlahpo as jumlahpox', 'hargapo as hargafix',
+                        DB::raw('(jumlahpo*hargapo) as subtotal'),
+                        DB::raw('p.id as idx'),
+                        DB::raw('COALESCE(SUM(p.jumlah_b), 0) as totalditerima'),
+                        DB::raw('COALESCE(SUM(p.jumlah_datang_b), 0) as totalditerimabias'),
+                        DB::raw('COALESCE(SUM(p.jumlah_rusak_b), 0) as totalbarangrusak'),
+                        DB::raw('(jumlahpo - COALESCE(SUM(p.jumlah_b), 0) - COALESCE(SUM(p.jumlah_rusak_b), 0)) as sisajumlahbelumditerimax'),
+                        DB::raw('(jumlahpo - COALESCE(SUM(p.jumlah_b), 0) - COALESCE(SUM(p.jumlah_rusak_b), 0)) as sisajumlahbelumditerima'),
+                        DB::raw('\'0\' as itemrusak'))
+                    ->leftJoin('penerimaan_r as p', function($join) {
+                        $join->on('p.kdbarang', '=', 'orderpembelian_r.kdbarang')
+                            ->on('p.noorder', '=', 'orderpembelian_r.noorder');
+                    })
+                    ->with(['mbarang'])
+                    ->groupBy('orderpembelian_r.id', 'orderpembelian_r.noorder', 'orderpembelian_r.kdbarang',
+                        'orderpembelian_r.jumlahpo', 'orderpembelian_r.satuan_b', 'orderpembelian_r.jumlahpo_k',
+                        'orderpembelian_r.satuan_k', 'orderpembelian_r.isi', 'orderpembelian_r.hargapo',
+                        'orderpembelian_r.total', 'orderpembelian_r.user', 'orderpembelian_r.flaging',
+                        'orderpembelian_r.created_at', 'orderpembelian_r.updated_at');
+                }
+
             ]
         )->
         where('flaging', '1')
@@ -177,4 +209,60 @@ class OrderPenerimaanController extends Controller
 
         return new JsonResponse($data);
     }
+
+    public function hapusall(Request $request)
+    {
+        try {
+            DB::beginTransaction();
+
+            // Hapus rincian order pembelian
+            OrderPembelian_r::where('noorder', $request->noorder)->delete();
+
+            // Hapus header penerimaan
+            Penerimaan_h::where('noorder', $request->noorder)->delete();
+
+            // Hapus header order pembelian
+            OrderPembelian_h::where('noorder', $request->noorder)->delete();
+
+            DB::commit();
+
+            $hasil = self::getlistorderhasilbytgl($request->from, $request->to,$request->q,$request->per_page);
+            // return $hasil;
+            return new JsonResponse(['message' => 'Data berhasil dihapus', 'result' => $hasil], 200);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return new JsonResponse(['message' => 'Gagal menghapus data', 'error' => $e->getMessage()], 500);
+        }
+    }
+
+     public static function getlistorderhasilbytgl($fromx,$tox,$qx,$per_page)
+    {
+        $q = $qx === null ? '' : $qx;
+        $from = $fromx.' 00:00:00';
+        $to = $tox.' 23:59:59';
+        $list = OrderPembelian_h::select('orderpembelian_h.*','orderpembelian_h.kdsuplier','suppliers.kodesupl','suppliers.nama')
+        ->leftJoin('suppliers', 'orderpembelian_h.kdsuplier', '=', 'suppliers.kodesupl')
+        ->with([
+            'suplier',
+            'rinci' => function($rinci){
+                $rinci->select('*', DB::raw('(jumlahpo*hargapo) as subtotal'))
+                ->with(['mbarang']);
+            }
+        ])
+        ->whereBetween('orderpembelian_h.tglorder', [
+            $from,
+            $to
+        ])
+        ->when($q, function ($query ) use($q)  {
+            $query->where(function($x) use($q) {
+                $x->where('orderpembelian_h.noorder', 'like', '%' . $q .  '%')
+                  ->orWhere('suppliers.nama', 'like', '%' . $q . '%');
+            });
+        })
+        ->simplePaginate($per_page);
+        return $list;
+    }
 }
+
+
+

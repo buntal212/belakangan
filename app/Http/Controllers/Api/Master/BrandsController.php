@@ -17,7 +17,7 @@ class BrandsController extends Controller
         ->when(request('q') !== '' || request('q') !== null, function($x){
            $x->where('brand', 'like', '%' . request('q') . '%');
         })
-        ->orderBy('id', 'desc')
+        ->orderBy('brand', 'asc')
         ->simplePaginate(request('per_page'));
 
         return new JsonResponse($data);

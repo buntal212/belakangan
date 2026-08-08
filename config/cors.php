@@ -19,7 +19,7 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => ['*'],
+    'allowed_origins' => ['*'], // URL Quasar Anda
 
     'allowed_origins_patterns' => [],
 
@@ -29,6 +29,16 @@ return [
 
     'max_age' => 0,
 
-    'supports_credentials' => false,
-
+    'supports_credentials' => true, // Penting untuk diaktifkan
 ];
+
+// return [
+//     'paths' => ['api/*', 'sanctum/csrf-cookie'],
+//     'allowed_methods' => ['*'],
+//     'allowed_origins' => [env('FRONTEND_URL', 'http://localhost:9002')], // URL Quasar Anda
+//     'allowed_origins_patterns' => [],
+//     'allowed_headers' => ['*'],
+//     'exposed_headers' => [],
+//     'max_age' => 0,
+//     'supports_credentials' => true, // Penting!
+// ];

@@ -1,0 +1,38 @@
+version: "3.8"
+
+services:
+  app:
+    build:
+      context: ./
+      dockerfile: Dockerfile.fpm
+      args:
+        user: harry
+        uid: 1000
+    working_dir: /var/www/
+    restart: unless-stopped
+    ports:
+      - "8001:8000"
+    environment:
+      - COMPOSER_MEMORY_LIMIT=-1
+    volumes:
+      - ./:/var/www
+    networks:
+      - harrynet
+
+  nginx:
+    image: nginx:alpine
+    container_name: nginx_tokobangunan
+    restart: unless-stopped
+    ports:
+      - "8182:8000"
+    volumes:
+      - ./:/var/www
+      - ./docker-compose/nginx:/etc/nginx/conf.d
+    depends_on:
+      - app
+    networks:
+      - harrynet
+
+networks:
+  harrynet:
+    driver: bridge

@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\StockOpnameJob;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 
@@ -17,3 +18,9 @@ use Illuminate\Support\Facades\Artisan;
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
+
+Artisan::command('stock:opname-test', function () {
+    $this->info('Running Stock Opname Test...');
+    StockOpnameJob::dispatch();
+    $this->info('Stock Opname Pendapatan, Hutang, Piutang, Pengeluarans Berhasil.');
+})->purpose('Run Stock Opname Job manually for testing');
