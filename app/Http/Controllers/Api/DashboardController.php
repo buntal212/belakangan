@@ -143,5 +143,6 @@ class DashboardController extends Controller
             'recentDebtPayments' => $recentDebtPayments,
             'recentReceivablePayments' => $recentReceivablePayments,
         ]);
+
     }
 }
