@@ -39,3 +39,7 @@ Route::prefix('v2')->group(function () {
     RouteHelper::includeRouteFiles(__DIR__ . '/v2');
 });
 
+// Routes v3 untuk katalog publik dan portal sales
+Route::prefix('v3')->group(function () {
+    RouteHelper::includeRouteFiles(__DIR__ . '/v3');
+});
