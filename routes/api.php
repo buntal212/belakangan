@@ -43,3 +43,13 @@ Route::prefix('v2')->group(function () {
 Route::prefix('v3')->group(function () {
     RouteHelper::includeRouteFiles(__DIR__ . '/v3');
 });
+
+// Routes v4 untuk frontend Jangur Keramik
+Route::prefix('v4')->group(function () {
+    RouteHelper::includeRouteFiles(__DIR__ . '/v4');
+});
+
+// Routes v5 khusus absensi pegawai
+Route::prefix('v5')->group(function () {
+    RouteHelper::includeRouteFiles(__DIR__ . '/v5');
+});

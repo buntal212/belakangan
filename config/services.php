@@ -1,6 +1,10 @@
 <?php
 
 return [
+    'face' => [
+        'url' => env('FACE_SERVICE_URL', 'http://host.docker.internal:8100'),
+        'api_key' => env('FACE_SERVICE_API_KEY'),
+    ],
 
     /*
     |--------------------------------------------------------------------------
