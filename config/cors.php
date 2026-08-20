@@ -19,14 +19,16 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => [
-        'https://jangur-keramik.my.id',
-        'https://www.jangur-keramik.my.id',
-        'https://admin.jangur-keramik.my.id',
-        'https://apps.jangur-keramik.my.id',
-        'http://localhost:9200',
-        'http://localhost:9000',
-    ],
+    'allowed_origins' => ['*'],
+
+    // 'allowed_origins' => [
+    //     'https://jangur-keramik.my.id',
+    //     'https://www.jangur-keramik.my.id',
+    //     'https://admin.jangur-keramik.my.id',
+    //     'https://apps.jangur-keramik.my.id',
+    //     'http://localhost:9200',
+    //     'http://localhost:9000',
+    // ],
 
     'allowed_origins_patterns' => [],
 
