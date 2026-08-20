@@ -14,7 +14,7 @@ class UsersController extends Controller
 {
     public function get_user()
     {
-        $data = User::where('username','!=' ,'sa')
+        $data = User::with('shift')->where('username','!=' ,'sa')
         ->whereNotNull('jabatan')
         ->when(request('q') , function($x){
             $x->where('nama', 'like', '%' . request('q') . '%')
@@ -38,7 +38,7 @@ class UsersController extends Controller
                 'nama' => 'required',
                 'email' => 'required|email|unique:users',
                 'username' => 'required|unique:users',
-                'password' => 'required',
+                'password' => 'required|string|min:6',
             ]);
         } else {
             // Pengguna ditemukan, update
@@ -46,7 +46,7 @@ class UsersController extends Controller
                 'nama' => 'required',
                 'email' => 'required|email|unique:users,email,' . $id,
                 'username' => 'required|unique:users,username,' . $id,
-                'password' => 'required',
+                'password' => 'nullable|string|min:6',
             ]);
         }
 
@@ -56,15 +56,19 @@ class UsersController extends Controller
 
         // Simpan atau update pengguna
         if ($user) {
-            $user->update([
+            $payload = [
                 'email' => $request->email,
                 'nama' => $request->nama,
-                'password' => bcrypt($request->password),
                 'jabatan' => $request->jabatan,
                 'kodejabatan' => $request->kodejabatan,
                 'nohp' => $request->nohp,
                 'alamat' => $request->alamat,
-            ]);
+                'shift' => $request->shift,
+            ];
+            if ($request->filled('password') && $request->password !== '••••••••') {
+                $payload['password'] = bcrypt($request->password);
+            }
+            $user->update($payload);
         } else {
             $user = User::create([
                 'username' => $request->username,
@@ -75,6 +79,7 @@ class UsersController extends Controller
                 'kodejabatan' => $request->kodejabatan,
                 'nohp' => $request->nohp,
                 'alamat' => $request->alamat,
+                'shift' => $request->shift,
             ]);
         }
 
@@ -102,12 +107,11 @@ class UsersController extends Controller
 
     public function getdatasetiing()
     {
-        $data = User::with(
-            [
-                'hakakses.menus',
-                'hakakses.subs'
-            ]
-        )
+        $data = User::with([
+            'shift',
+            'hakakses.menus',
+            'hakakses.subs',
+        ])
         ->where('username', '<>', 'sa')
         // ->when(request('q') !== '' || request('q') !== null, function($x){
         //     $x->where('nama', 'like', '%' . request('q') . '%')

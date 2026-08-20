@@ -63,4 +63,9 @@ class User extends Authenticatable implements JWTSubject
         return $this->hasMany(HakaksesMenu::class,'user_id');
     }
 
+    public function shift()
+    {
+        return $this->belongsTo(ShiftKerja::class, 'shift');
+    }
+
 }
