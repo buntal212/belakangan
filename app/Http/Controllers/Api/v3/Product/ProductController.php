@@ -6,6 +6,38 @@ use Illuminate\Http\Request;
 
 class ProductController extends V2ProductController
 {
+    public function getProduct(string $identifier)
+    {
+        $product = Barang::query()
+            ->whereHas('stoks', fn ($query) => $query->where('jumlah_k', '>', 0))
+            ->where(fn ($query) => $query->where('id', $identifier)->orWhere('kodebarang', $identifier))
+            ->with(['images' => fn ($query) => $query->select('id', 'kodebarang', 'gambar', 'flag_thumbnail')->orderByDesc('flag_thumbnail')->orderBy('id')])
+            ->first();
+
+        if (!$product) return response()->json(['success' => false, 'message' => 'Produk tidak ditemukan'], 404);
+
+        $product->image = filter_var($product->image, FILTER_VALIDATE_URL) ? $product->image : ($product->image ? asset('storage/' . ltrim($product->image, '/')) : null);
+        $product->images->each(function ($image) {
+            $image->gambar = filter_var($image->gambar, FILTER_VALIDATE_URL) ? $image->gambar : asset('storage/' . ltrim($image->gambar, '/'));
+        });
+
+        return response()->json(['success' => true, 'data' => $product]);
+    }
+
+    public function getProductBySlug(string $slug)
+    {
+        $name = str_replace('-', ' ', urldecode($slug));
+        $product = Barang::query()
+            ->whereHas('stoks', fn ($query) => $query->where('jumlah_k', '>', 0))
+            ->where('namagabung', $name)
+            ->with(['images' => fn ($query) => $query->select('id', 'kodebarang', 'gambar', 'flag_thumbnail')->orderByDesc('flag_thumbnail')->orderBy('id')])
+            ->first();
+        if (!$product) return response()->json(['success' => false, 'message' => 'Produk tidak ditemukan'], 404);
+        $product->image = filter_var($product->image, FILTER_VALIDATE_URL) ? $product->image : ($product->image ? asset('storage/' . ltrim($product->image, '/')) : null);
+        $product->images->each(fn ($image) => $image->gambar = filter_var($image->gambar, FILTER_VALIDATE_URL) ? $image->gambar : asset('storage/' . ltrim($image->gambar, '/')));
+        return response()->json(['success' => true, 'data' => $product]);
+    }
+
     public function getFilters()
     {
         $grouped = static function (string $column) {
@@ -32,12 +64,88 @@ class ProductController extends V2ProductController
         ]);
     }
 
+    // public function getProducts(Request $request)
+    // {
+    //     $query = Barang::query()
+    //         ->whereHas('stoks', function ($query) {
+    //             $query->where('jumlah_k', '>', 0);
+    //         })
+    //         ->select(
+    //             'id',
+    //             'kodebarang',
+    //             'namabarang AS name',
+    //             'namagabung',
+    //             'kualitas',
+    //             'brand',
+    //             'satuan_b',
+    //             'satuan_k',
+    //             'kategori AS category',
+    //             'isi',
+    //             'ukuran',
+    //             'kodejenis',
+    //             // Gambar utama untuk halaman depan/thumbnail.
+    //             'image'
+    //         )
+    //         ->with([
+    //             // Gambar rincian diambil dari imagebarangs melalui relasi
+    //             // Barang::images() berdasarkan kodebarang.
+    //             'images' => function ($query) {
+    //                 $query->select('id', 'kodebarang', 'gambar', 'flag_thumbnail')
+    //                     ->orderByDesc('flag_thumbnail')
+    //                     ->orderBy('id');
+    //             },
+    //         ]);
+    //     $products = $query->orderByDesc('created_at')->get();
+
+    //     $toImageUrl = static function (?string $path): ?string {
+    //         if (!$path) {
+    //             return null;
+    //         }
+
+    //         if (filter_var($path, FILTER_VALIDATE_URL)) {
+    //             return $path;
+    //         }
+
+    //         return asset('storage/' . ltrim($path, '/'));
+    //     };
+
+    //     $products->each(function (Barang $product) use ($toImageUrl) {
+    //         $product->image = $toImageUrl($product->image);
+
+    //         $product->images->each(function ($image) use ($toImageUrl) {
+    //             $image->gambar = $toImageUrl($image->gambar);
+    //         });
+    //     });
+
+    //     return response()->json(['success' => true, 'data' => ['data' => $products]]);
+    // }
+
     public function getProducts(Request $request)
     {
+        $perPage = (int) $request->input('per_page', 24);
+
+        // Batasi supaya client tidak bisa minta ribuan data sekaligus
+        $perPage = max(1, min($perPage, 100));
+
+        $search = trim((string) $request->input('search', ''));
+
         $query = Barang::query()
             ->whereHas('stoks', function ($query) {
                 $query->where('jumlah_k', '>', 0);
             })
+
+            // Pencarian
+            ->when($search !== '', function ($query) use ($search) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('namabarang', 'like', "%{$search}%")
+                        ->orWhere('namagabung', 'like', "%{$search}%")
+                        ->orWhere('kodebarang', 'like', "%{$search}%")
+                        ->orWhere('brand', 'like', "%{$search}%")
+                        ->orWhere('kategori', 'like', "%{$search}%")
+                        ->orWhere('ukuran', 'like', "%{$search}%");
+                });
+            })
+
             ->select(
                 'id',
                 'kodebarang',
@@ -51,19 +159,26 @@ class ProductController extends V2ProductController
                 'isi',
                 'ukuran',
                 'kodejenis',
-                // Gambar utama untuk halaman depan/thumbnail.
-                'image'
+                'image',
+                'created_at'
             )
+
             ->with([
-                // Gambar rincian diambil dari imagebarangs melalui relasi
-                // Barang::images() berdasarkan kodebarang.
                 'images' => function ($query) {
-                    $query->select('id', 'kodebarang', 'gambar', 'flag_thumbnail')
-                        ->orderByDesc('flag_thumbnail')
-                        ->orderBy('id');
+                    $query->select(
+                        'id',
+                        'kodebarang',
+                        'gambar',
+                        'flag_thumbnail'
+                    )
+                    ->orderByDesc('flag_thumbnail')
+                    ->orderBy('id');
                 },
-            ]);
-        $products = $query->orderByDesc('created_at')->get();
+            ])
+
+            ->orderByDesc('created_at');
+
+        $products = $query->paginate($perPage);
 
         $toImageUrl = static function (?string $path): ?string {
             if (!$path) {
@@ -77,7 +192,7 @@ class ProductController extends V2ProductController
             return asset('storage/' . ltrim($path, '/'));
         };
 
-        $products->each(function (Barang $product) use ($toImageUrl) {
+        $products->getCollection()->each(function (Barang $product) use ($toImageUrl) {
             $product->image = $toImageUrl($product->image);
 
             $product->images->each(function ($image) use ($toImageUrl) {
@@ -85,6 +200,9 @@ class ProductController extends V2ProductController
             });
         });
 
-        return response()->json(['success' => true, 'data' => ['data' => $products]]);
+        return response()->json([
+            'success' => true,
+            'data' => $products,
+        ]);
     }
 }
