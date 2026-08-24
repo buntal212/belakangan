@@ -26,10 +26,9 @@ class ProductController extends V2ProductController
 
     public function getProductBySlug(string $slug)
     {
-        $name = str_replace('-', ' ', urldecode($slug));
         $product = Barang::query()
             ->whereHas('stoks', fn ($query) => $query->where('jumlah_k', '>', 0))
-            ->where('namagabung', $name)
+            ->where('slug', urldecode($slug))
             ->with(['images' => fn ($query) => $query->select('id', 'kodebarang', 'gambar', 'flag_thumbnail')->orderByDesc('flag_thumbnail')->orderBy('id')])
             ->first();
         if (!$product) return response()->json(['success' => false, 'message' => 'Produk tidak ditemukan'], 404);
@@ -149,6 +148,7 @@ class ProductController extends V2ProductController
             ->select(
                 'id',
                 'kodebarang',
+                'slug',
                 'namabarang AS name',
                 'namagabung',
                 'kualitas',
