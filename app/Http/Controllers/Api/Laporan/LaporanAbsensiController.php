@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Laporan;
 
 use App\Http\Controllers\Controller;
 use App\Models\Absensi;
+use App\Models\ShiftKerja;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -20,8 +21,9 @@ class LaporanAbsensiController extends Controller
         ]);
 
         $rows = Absensi::query()
-            ->with('user:id,nama,username,jabatan,shift', 'user.shift')
+            ->with('user:id,nama,username,jabatan,shift')
             ->whereBetween('tanggal', [$data['tglawal'], $data['tglakhir']])
+            ->whereHas('user', fn ($query) => $query->whereRaw('LOWER(username) <> ?', ['sa']))
             ->when($data['pegawai_id'] ?? null, fn ($query, $id) => $query->where('user_id', $id))
             ->orderByDesc('tanggal')->orderBy('user_id')->orderBy('waktu')
             ->get()
@@ -32,11 +34,13 @@ class LaporanAbsensiController extends Controller
                 $status = 'alpa';
                 if ($masuk) {
                     $status = 'hadir';
-                    $shift = $masuk->user?->shift;
+                    // users.shift menyimpan ID shift, bukan object relasi.
+                    $shift = $masuk->user?->shift
+                        ? ShiftKerja::find($masuk->user->shift)
+                        : null;
                     if ($shift?->jam_masuk && $masuk->waktu) {
-                        $batas = Carbon::parse($masuk->tanggal->format('Y-m-d') . ' ' . $shift->jam_masuk)
-                            ->addMinutes((int) $shift->toleransi);
-                        if ($masuk->waktu->greaterThan($batas)) $status = 'terlambat';
+                        $jamMasuk = Carbon::parse($masuk->tanggal->format('Y-m-d') . ' ' . $shift->jam_masuk);
+                        if ($masuk->waktu->greaterThan($jamMasuk)) $status = 'terlambat';
                     }
                 }
                 return [
