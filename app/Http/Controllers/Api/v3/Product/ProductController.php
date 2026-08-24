@@ -2,6 +2,9 @@
 namespace App\Http\Controllers\Api\v3\Product;
 use App\Http\Controllers\Api\v2\Product\ProductController as V2ProductController;
 use App\Models\Barang;
+use App\Models\Jeniskeramik;
+use App\Http\Resources\PublicProductResource;
+use App\Services\ProductSlugService;
 use Illuminate\Http\Request;
 
 class ProductController extends V2ProductController
@@ -21,7 +24,7 @@ class ProductController extends V2ProductController
             $image->gambar = filter_var($image->gambar, FILTER_VALIDATE_URL) ? $image->gambar : asset('storage/' . ltrim($image->gambar, '/'));
         });
 
-        return response()->json(['success' => true, 'data' => $product]);
+        return response()->json(['success' => true, 'data' => new PublicProductResource($product)]);
     }
 
     public function getProductBySlug(string $slug)
@@ -31,10 +34,16 @@ class ProductController extends V2ProductController
             ->where('slug', urldecode($slug))
             ->with(['images' => fn ($query) => $query->select('id', 'kodebarang', 'gambar', 'flag_thumbnail')->orderByDesc('flag_thumbnail')->orderBy('id')])
             ->first();
-        if (!$product) return response()->json(['success' => false, 'message' => 'Produk tidak ditemukan'], 404);
+        if (!$product) {
+            $legacy = ProductSlugService::findLegacy(urldecode($slug));
+            if ($legacy && $legacy->slug) {
+                return redirect()->route('api.v3.product.detail-by-slug', ['slug' => $legacy->slug], 301);
+            }
+            return response()->json(['success' => false, 'message' => 'Produk tidak ditemukan'], 404);
+        }
         $product->image = filter_var($product->image, FILTER_VALIDATE_URL) ? $product->image : ($product->image ? asset('storage/' . ltrim($product->image, '/')) : null);
         $product->images->each(fn ($image) => $image->gambar = filter_var($image->gambar, FILTER_VALIDATE_URL) ? $image->gambar : asset('storage/' . ltrim($image->gambar, '/')));
-        return response()->json(['success' => true, 'data' => $product]);
+        return response()->json(['success' => true, 'data' => new PublicProductResource($product)]);
     }
 
     public function getFilters()
@@ -52,13 +61,25 @@ class ProductController extends V2ProductController
                 ->values();
         };
 
+        $typeCodes = $grouped('kodejenis');
+        $types = Jeniskeramik::query()
+            ->whereIn('kodejenis', $typeCodes)
+            ->whereNull('flaging')
+            ->orderBy('nama')
+            ->get(['kodejenis', 'nama'])
+            ->map(fn ($type) => [
+                'value' => $type->kodejenis,
+                'label' => $type->nama,
+            ])
+            ->values();
+
         return response()->json([
             'success' => true,
             'data' => [
                 'brands' => $grouped('brand'),
                 'sizes' => $grouped('ukuran'),
                 'grades' => $grouped('kualitas'),
-                'types' => $grouped('kodejenis'),
+                'types' => $types,
             ],
         ]);
     }
@@ -160,7 +181,6 @@ class ProductController extends V2ProductController
                 'ukuran',
                 'kodejenis',
                 'image',
-                'created_at'
             )
 
             ->with([
@@ -202,7 +222,13 @@ class ProductController extends V2ProductController
 
         return response()->json([
             'success' => true,
-            'data' => $products,
+            'data' => [
+                'data' => PublicProductResource::collection($products)->resolve($request),
+                'current_page' => $products->currentPage(),
+                'last_page' => $products->lastPage(),
+                'per_page' => $products->perPage(),
+                'total' => $products->total(),
+            ],
         ]);
     }
 }

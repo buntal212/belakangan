@@ -11,6 +11,7 @@ use App\Models\Transaksi\Penjualan\DetailReturPenjualan;
 use App\Models\Transaksi\Penjualan\HeaderReturPenjualan;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Services\ProductSlugService;
 
 class Barang extends Model
 {
@@ -22,6 +23,15 @@ class Barang extends Model
         $this->save();
     }
     protected $guarded = ['id'];
+
+    protected static function booted(): void
+    {
+        static::creating(function (Barang $barang) {
+            if (!$barang->slug) {
+                $barang->slug = ProductSlugService::generate($barang->namagabung, $barang->kodebarang);
+            }
+        });
+    }
     public function rincians()
     {
         return $this->hasMany(Imagebarang::class, 'kodebarang', 'kodebarang');
