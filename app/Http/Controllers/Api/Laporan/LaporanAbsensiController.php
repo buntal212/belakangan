@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Laporan;
 
 use App\Http\Controllers\Controller;
 use App\Models\Absensi;
+use App\Models\PermohonanAbsensi;
 use App\Models\ShiftKerja;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -54,7 +55,37 @@ class LaporanAbsensiController extends Controller
                     'keterangan' => null,
                 ];
             })
+            ->keyBy(fn ($row) => $row['pegawai_id'] . '|' . $row['tanggal']);
+
+        PermohonanAbsensi::query()
+            ->with('pegawai:id,nama,username,jabatan')
+            ->whereDate('tanggal_mulai', '<=', $data['tglakhir'])
+            ->whereDate('tanggal_selesai', '>=', $data['tglawal'])
+            ->when($data['pegawai_id'] ?? null, fn ($query, $id) => $query->where('user_id', $id))
+            ->whereHas('pegawai', fn ($query) => $query->whereRaw('LOWER(username) <> ?', ['sa']))
+            ->get()
+            ->each(function ($permohonan) use ($rows, $data) {
+                $mulai = Carbon::parse($permohonan->tanggal_mulai)->max(Carbon::parse($data['tglawal']));
+                $selesai = Carbon::parse($permohonan->tanggal_selesai)->min(Carbon::parse($data['tglakhir']));
+
+                for ($tanggal = $mulai->copy(); $tanggal->lte($selesai); $tanggal->addDay()) {
+                    $tanggalString = $tanggal->toDateString();
+                    $rows->put($permohonan->user_id . '|' . $tanggalString, [
+                        'id' => 'permohonan-' . $permohonan->id . '-' . $tanggalString,
+                        'tanggal' => $tanggalString,
+                        'pegawai_id' => $permohonan->user_id,
+                        'nama_pegawai' => $permohonan->pegawai?->nama ?? $permohonan->pegawai?->username,
+                        'jam_masuk' => null,
+                        'jam_pulang' => null,
+                        'status' => $permohonan->jenis === 'alpha' ? 'alpa' : $permohonan->jenis,
+                        'keterangan' => $permohonan->keterangan,
+                    ]);
+                }
+            });
+
+        $rows = $rows
             ->filter(fn ($row) => empty($data['status']) || $row['status'] === $data['status'])
+            ->sortByDesc('tanggal')
             ->values();
 
         return response()->json(['data' => $rows, 'meta' => [
