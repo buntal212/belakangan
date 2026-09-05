@@ -76,6 +76,53 @@ class PembayaranHutangController extends Controller
         return new JsonResponse($data);
     }
 
+    public function riwayatHutang(Request $request): JsonResponse
+    {
+        $noPenerimaan = $request->validate([
+            'nopenerimaan' => ['required', 'string', 'max:100'],
+        ])['nopenerimaan'];
+
+        $hutang = Penerimaan_h::with([
+            'suplier:kodesupl,nama',
+            'rinci:nopenerimaan,subtotal',
+        ])->where('nopenerimaan', $noPenerimaan)->first();
+
+        if (!$hutang) {
+            return new JsonResponse(['message' => 'Data penerimaan tidak ditemukan.'], 404);
+        }
+
+        $rincian = DB::table('pembayaran_hutang_r')
+            ->leftJoin('pembayaran_hutang_h', 'pembayaran_hutang_h.notrans', '=', 'pembayaran_hutang_r.notrans')
+            ->where('pembayaran_hutang_r.nopenerimaan', $noPenerimaan)
+            ->orderBy('pembayaran_hutang_h.tgl_bayar')
+            ->orderBy('pembayaran_hutang_r.id')
+            ->select([
+                'pembayaran_hutang_r.id',
+                'pembayaran_hutang_r.total as jumlah',
+                'pembayaran_hutang_h.notrans as nopembayaran',
+                'pembayaran_hutang_h.tgl_bayar',
+                'pembayaran_hutang_h.cara_bayar',
+                'pembayaran_hutang_h.keterangan',
+            ])->get();
+
+        $totalHutang = (float) $hutang->rinci->sum('subtotal');
+        $totalDibayar = (float) $rincian->sum('jumlah');
+
+        return new JsonResponse([
+            'data' => [
+                'nopenerimaan' => $hutang->nopenerimaan,
+                'nama_supplier' => $hutang->suplier?->nama,
+                'tgl_penerimaan' => $hutang->created_at,
+                'nofaktur' => $hutang->nofaktur,
+                'tgl_faktur' => $hutang->tgl_faktur,
+                'total_hutang' => $totalHutang,
+                'total_dibayar' => $totalDibayar,
+                'sisa_hutang' => max($totalHutang - $totalDibayar, 0),
+                'rincian' => $rincian,
+            ],
+        ]);
+    }
+
     public function simpan(Request $request)
     {
         if($request->nopembayaran === '' || $request->nopembayaran === null)

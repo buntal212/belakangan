@@ -10,6 +10,7 @@ Route::group([
     Route::get('/list', [PembayaranHutangController::class, 'index']);
     Route::get('/list-hutang', [PembayaranHutangController::class, 'listhutang']);
     Route::get('/listbynopembayaran', [PembayaranHutangController::class, 'listbynopembayaran']);
+    Route::get('/riwayat-hutang', [PembayaranHutangController::class, 'riwayatHutang']);
 
     Route::post('/simpan', [PembayaranHutangController::class, 'simpan']);
     Route::post('/hapusrincian', [PembayaranHutangController::class, 'hapusrincian']);

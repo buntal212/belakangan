@@ -73,6 +73,67 @@ class PembayaranPiutangController extends Controller
         return new JsonResponse($data);
     }
 
+    public function riwayatNota(string $noPenjualan): JsonResponse
+    {
+        $nota = DB::table('header_penjualans')
+            ->leftJoin('pelanggans', 'pelanggans.id', '=', 'header_penjualans.pelanggan_id')
+            ->where('header_penjualans.no_penjualan', $noPenjualan)
+            ->select([
+                'header_penjualans.id',
+                'header_penjualans.no_penjualan',
+                'header_penjualans.tgl as tgl_hutang',
+                'header_penjualans.total as total_nota',
+                'header_penjualans.bayar as pembayaran_awal',
+                'header_penjualans.cara_bayar as cara_bayar_awal',
+                'pelanggans.nama as nama_pelanggan',
+            ])
+            ->first();
+
+        if (!$nota) {
+            return new JsonResponse(['message' => 'Nota penjualan tidak ditemukan.'], 404);
+        }
+
+        $rincian = DB::table('pembayaran_cicilans')
+            ->leftJoin('header_cicilans', 'header_cicilans.id', '=', 'pembayaran_cicilans.header_ciclan_id')
+            ->where('pembayaran_cicilans.no_penjualan', $noPenjualan)
+            ->orderBy('pembayaran_cicilans.tgl_bayar')
+            ->orderBy('pembayaran_cicilans.id')
+            ->select([
+                'pembayaran_cicilans.id',
+                'pembayaran_cicilans.tgl_bayar',
+                'pembayaran_cicilans.jumlah',
+                'header_cicilans.nopembayaran',
+                'header_cicilans.cara_bayar',
+                'header_cicilans.keterangan',
+            ])
+            ->get();
+
+        if ((float) $nota->pembayaran_awal > 0) {
+            $rincian->prepend((object) [
+                'id' => 'pembayaran-awal-' . $nota->id,
+                'tgl_bayar' => $nota->tgl_hutang,
+                'jumlah' => (float) $nota->pembayaran_awal,
+                'nopembayaran' => null,
+                'cara_bayar' => $nota->cara_bayar_awal,
+                'keterangan' => 'Pembayaran awal (DP)',
+            ]);
+        }
+
+        $totalDibayar = $rincian->sum('jumlah');
+
+        return new JsonResponse([
+            'data' => [
+                'no_penjualan' => $nota->no_penjualan,
+                'nama_pelanggan' => $nota->nama_pelanggan,
+                'tgl_hutang' => $nota->tgl_hutang,
+                'total_nota' => (float) $nota->total_nota,
+                'total_dibayar_nota' => (float) $totalDibayar,
+                'sisa_piutang_nota' => max((float) $nota->total_nota - (float) $totalDibayar, 0),
+                'rincian' => $rincian->values(),
+            ],
+        ]);
+    }
+
     public function simpan(Request $request)
     {
         if($request->nopembayaran === '' || $request->nopembayaran === null)
