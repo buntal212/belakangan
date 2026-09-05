@@ -1,0 +1,71 @@
+[90m= [39m[34;4mIlluminate\Database\Eloquent\Collection[39;24m {#6355
+    [34mall[39m: [
+      [34;4mApp\Models\Imagebarang[39;24m {#6357
+        [34mid[39m: [35m1[39m,
+        [34mkodebarang[39m: "[32m00012-BRG[39m",
+        [34mgambar[39m: "[32mimages/0aluNGBu3gr1n0Ga3VAvNZx6o8BlUjtsd4NyI0vF.jpg[39m",
+        [34mflag_thumbnail[39m: [36mnull[39m,
+      },
+      [34;4mApp\Models\Imagebarang[39;24m {#6358
+        [34mid[39m: [35m2[39m,
+        [34mkodebarang[39m: "[32m00012-BRG[39m",
+        [34mgambar[39m: "[32mimages/BF3m3m4sxhZZtVggbTtKfkKcmqZMWjV18UVZFiwW.jpg[39m",
+        [34mflag_thumbnail[39m: "[32m1[39m",
+      },
+      [34;4mApp\Models\Imagebarang[39;24m {#6359
+        [34mid[39m: [35m3[39m,
+        [34mkodebarang[39m: "[32m00012-BRG[39m",
+        [34mgambar[39m: "[32mimages/PsEZowfjLMhY4v7yypHMbg5OBHPbMPdvY1P65iI6.jpg[39m",
+        [34mflag_thumbnail[39m: [36mnull[39m,
+      },
+      [34;4mApp\Models\Imagebarang[39;24m {#6360
+        [34mid[39m: [35m9[39m,
+        [34mkodebarang[39m: "[32m00019-BRG[39m",
+        [34mgambar[39m: "[32mimages/OzyDtPGLonX36kAe4ksUh2AdfR9BLNcSYl0TTx2c.jpg[39m",
+        [34mflag_thumbnail[39m: [36mnull[39m,
+      },
+      [34;4mApp\Models\Imagebarang[39;24m {#6361
+        [34mid[39m: [35m10[39m,
+        [34mkodebarang[39m: "[32m00019-BRG[39m",
+        [34mgambar[39m: "[32mimages/LPeysw2av1LSqDwLa0uT7qXbPCgz7wAHNlZD5cEm.jpg[39m",
+        [34mflag_thumbnail[39m: "[32m1[39m",
+      },
+      [34;4mApp\Models\Imagebarang[39;24m {#6362
+        [34mid[39m: [35m11[39m,
+        [34mkodebarang[39m: "[32m00019-BRG[39m",
+        [34mgambar[39m: "[32mimages/1oxBWXkrCuyptyLWDVoXlUvKdSjT7TdwX2iApqj3.jpg[39m",
+        [34mflag_thumbnail[39m: [36mnull[39m,
+      },
+      [34;4mApp\Models\Imagebarang[39;24m {#6363
+        [34mid[39m: [35m12[39m,
+        [34mkodebarang[39m: "[32m00057-BRG[39m",
+        [34mgambar[39m: "[32mimages/VtJTP6KFhU2Hlr9NvDEaWOZIVCGGFlZEtkXqQ9gA.png[39m",
+        [34mflag_thumbnail[39m: "[32m1[39m",
+      },
+      [34;4mApp\Models\Imagebarang[39;24m {#6364
+        [34mid[39m: [35m13[39m,
+        [34mkodebarang[39m: "[32m00208-BRG[39m",
+        [34mgambar[39m: "[32mimages/YN4c1fneTQ7gqVQ8YOTo4boATGszFLn0KauSbUw6.png[39m",
+        [34mflag_thumbnail[39m: "[32m1[39m",
+      },
+      [34;4mApp\Models\Imagebarang[39;24m {#6365
+        [34mid[39m: [35m16[39m,
+        [34mkodebarang[39m: "[32m00917-BRG[39m",
+        [34mgambar[39m: "[32mimages/RPQnUOJ4v4Z6BSsLgAjLVqtAUqJfySnQqxlDCQ1m.jpg[39m",
+        [34mflag_thumbnail[39m: "[32m1[39m",
+      },
+      [34;4mApp\Models\Imagebarang[39;24m {#6366
+        [34mid[39m: [35m17[39m,
+        [34mkodebarang[39m: "[32m00917-BRG[39m",
+        [34mgambar[39m: "[32mimages/OwWCVp7kSwHrFoCiGUdpFfW42MN40A5OVRlNLxnv.jpg[39m",
+        [34mflag_thumbnail[39m: [36mnull[39m,
+      },
+      [34;4mApp\Models\Imagebarang[39;24m {#6367
+        [34mid[39m: [35m18[39m,
+        [34mkodebarang[39m: "[32m00917-BRG[39m",
+        [34mgambar[39m: "[32mimages/7ikpmrVyFupJPGmaDqDp0EDxQqcv7tpgBlR6xHuH.jpg[39m",
+        [34mflag_thumbnail[39m: [36mnull[39m,
+      },
+    ],
+  }
+

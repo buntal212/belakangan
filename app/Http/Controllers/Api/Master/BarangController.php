@@ -6,6 +6,7 @@ use App\Helpers\FormatingHelper;
 use App\Http\Controllers\Controller;
 use App\Models\Barang;
 use App\Models\Imagebarang;
+use App\Services\ProductThumbnailService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -451,6 +452,7 @@ class BarangController extends Controller
             foreach ($request->rincians as $img) {
                 if (isset($img['gambar']) && $img['gambar']->isValid()) {
                     $path = $img['gambar']->store('images', 'public');
+                    app(ProductThumbnailService::class)->generateIfMissing($path);
 
                     // Jika flag_thumbnail = 1 dan belum ada thumbnail sebelumnya
                     if (isset($img['flag_thumbnail']) && $img['flag_thumbnail'] === '1' && !$hasThumbnail) {

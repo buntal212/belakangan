@@ -1,47 +1,44 @@
 FROM php:8.3-fpm
 
-# Arguments from docker-compose.yml
 ARG user
 ARG uid
 
-# Install system dependencies and PHP extensions
 RUN apt-get update && apt-get install -y \
     git \
     curl \
     libpng-dev \
+    libjpeg62-turbo-dev \
+    libwebp-dev \
+    libfreetype6-dev \
     libonig-dev \
     libxml2-dev \
     zip \
     unzip \
     libzip-dev \
     libssl-dev \
-    && docker-php-ext-install pdo_mysql mbstring zip exif pcntl bcmath \
-    && pecl install redis && docker-php-ext-enable redis
+    && docker-php-ext-configure gd \
+    --with-freetype \
+    --with-jpeg \
+    --with-webp \
+    && docker-php-ext-install pdo_mysql mbstring zip exif pcntl bcmath gd \
+    && pecl install redis \
+    && docker-php-ext-enable redis
 
-# Clear apt cache
 RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Install Composer (copy from official composer image)
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# Create system user
 RUN groupadd -g ${uid} ${user} \
     && useradd -u ${uid} -ms /bin/bash -g ${user} ${user}
 
-# Set working directory
 WORKDIR /var/www
 
-# Copy project files
 COPY . .
 
-# Set correct permissions
 RUN chown -R ${user}:${user} /var/www
 
 USER ${user}
 
-# Expose PHP-FPM default port
 EXPOSE 9000
 
-# Start PHP-FPM
 CMD ["php-fpm"]
-
