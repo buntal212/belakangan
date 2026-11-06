@@ -36,10 +36,18 @@ class FifoHelper
             $hargaJual = $detail->harga_jual;
             $diskon = $detail->diskon;
 
-            // Get available stocks
-            $stoks = stok::where('kdbarang', $kodeBarang)
-                ->where('motif', $motif)
-                ->where('jumlah_k', '>', 0)
+            // Order sales belum memilih motif. Dalam kondisi itu, alokasikan
+            // stok dari semua motif yang tersedia secara FIFO. Jika motif
+            // ditentukan, stok tetap dibatasi pada motif tersebut.
+            $queryStok = stok::where('kdbarang', $kodeBarang)
+                ->where('jumlah_k', '>', 0);
+
+            if ($motif !== null && $motif !== '') {
+                $queryStok->where('motif', $motif);
+            }
+
+            $stoks = $queryStok
+                ->lockForUpdate()
                 ->orderBy('created_at', 'asc')
                 ->get();
             // reject if stock is less than available
@@ -49,8 +57,13 @@ class FifoHelper
             }
 
             // Get latest purchase price even if stock is empty
-            $lastHargaBeli = stok::where('kdbarang', $kodeBarang)
-                ->where('motif', $motif)
+            $queryHargaBeliTerakhir = stok::where('kdbarang', $kodeBarang);
+
+            if ($motif !== null && $motif !== '') {
+                $queryHargaBeliTerakhir->where('motif', $motif);
+            }
+
+            $lastHargaBeli = $queryHargaBeliTerakhir
                 ->orderBy('created_at', 'desc')
                 ->value('harga_beli_k') ?? 0;
 

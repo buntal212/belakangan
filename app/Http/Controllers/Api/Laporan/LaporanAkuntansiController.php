@@ -153,13 +153,32 @@ class LaporanAkuntansiController extends Controller
         $from = Carbon::createFromFormat('Y-m-d', "$tahun-$bulan-01")->startOfMonth()->format('Y-m-d 00:00:00');
         $to   = Carbon::createFromFormat('Y-m-d', "$tahun-$bulan-01")->endOfMonth()->format('Y-m-d 23:59:59');
 
-        $penjualan = OpnamePenjualan::whereBetween('tgl_opname', [$from, $to])
-            ->groupBy('akun', 'keterangan')
-            ->selectRaw('akun, keterangan, SUM(nilai) as total')
-            ->get();
+        // Jangan menggunakan snapshot opname untuk pendapatan karena nilainya
+        // dapat tertinggal. Dasar pendapatan harus sama dengan dashboard:
+        // subtotal penjualan sebelum PPN dikurangi retur yang disetujui.
+        $flagPenjualanValid = ['2', '3', '4', '5', '7', '8'];
+        $penjualanSemua = (float) DB::table('detail_penjualans as detail')
+            ->join('header_penjualans as header', 'header.no_penjualan', '=', 'detail.no_penjualan')
+            ->whereIn('header.flag', $flagPenjualanValid)
+            ->whereBetween('header.tgl', [$from, $to])
+            ->sum('detail.subtotal');
+
+        $returpenjualan = (float) DB::table('header_retur_penjualans')
+            ->where('status', 1)
+            ->whereBetween('tgl', [$from, $to])
+            ->leftJoin('detail_retur_penjualans', 'detail_retur_penjualans.header_retur_penjualan_id', '=', 'header_retur_penjualans.id')
+            ->sum('detail_retur_penjualans.subtotal');
+
+        $totalPenjualan = $penjualanSemua - $returpenjualan;
+        $penjualan = [[
+            'akun' => '0001-PNJ',
+            'keterangan' => 'Penjualan Bersih (tanpa PPN)',
+            'total' => $totalPenjualan,
+        ]];
 
         $hpp =  DB::table('header_penjualans')
-            ->whereBetween('tgl', [$from . ' 00:00:00', $to . ' 23:59:59'])
+            ->whereBetween('tgl', [$from, $to])
+            ->whereIn('flag', $flagPenjualanValid)
             ->leftJoin('detail_penjualan_fifos', 'detail_penjualan_fifos.no_penjualan', '=', 'header_penjualans.no_penjualan')
             ->sum(DB::raw('(detail_penjualan_fifos.jumlah * detail_penjualan_fifos.harga_beli)'));
 
@@ -173,33 +192,6 @@ class LaporanAkuntansiController extends Controller
                     })
                 ->sum(DB::raw('(detail_retur_penjualans.jumlah * detail_penjualan_fifos.harga_beli)'));
         $nilaihpp = $hpp - $returhpp;
-        if ($penjualan->isEmpty()) {
-            $startOfMonth = Carbon::parse($from)->startOfMonth()->format('Y-m-d');
-            $endOfMonth   = Carbon::parse($to)->endOfMonth()->format('Y-m-d');
-
-            $penjualanSemua =  DB::table('header_penjualans')
-                    ->whereBetween('tgl', [$startOfMonth . ' 00:00:00', $endOfMonth . ' 23:59:59'])
-                    ->leftJoin('detail_penjualan_fifos', 'detail_penjualan_fifos.no_penjualan', '=', 'header_penjualans.no_penjualan')
-                    ->sum('detail_penjualan_fifos.subtotal');
-
-            $returpenjualan = DB::table('header_retur_penjualans')
-                ->where('status', 1)
-                ->whereBetween('tgl', [$startOfMonth . ' 00:00:00', $endOfMonth . ' 23:59:59'])
-                ->leftJoin('detail_retur_penjualans', 'detail_retur_penjualans.header_retur_penjualan_id', '=', 'header_retur_penjualans.id')
-                ->sum('detail_retur_penjualans.subtotal');
-            $totalPenjualan = $penjualanSemua - $returpenjualan;
-
-            $penjualan = [
-                [
-                    'akun' => '0001-PNJ',
-                    'keterangan' => 'Penjualan Bersih',
-                    'total' => $totalPenjualan
-                ],
-            ];
-        } else {
-            $totalPenjualan = $penjualan->sum('total');
-
-        }
         $labaKotor = $totalPenjualan - $nilaihpp;
 
         //     $returpenjualan = DB::table('header_retur_penjualans')

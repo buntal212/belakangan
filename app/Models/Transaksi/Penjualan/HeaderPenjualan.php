@@ -3,6 +3,7 @@
 namespace App\Models\Transaksi\Penjualan;
 
 use App\Models\KeteranganPelanggan;
+use App\Models\OrderPenjualan;
 use App\Models\Pelanggan;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -57,6 +58,10 @@ class HeaderPenjualan extends Model
     public function pelanggan()
     {
         return $this->belongsTo(Pelanggan::class);
+    }
+    public function orderSumber()
+    {
+        return $this->belongsTo(OrderPenjualan::class, 'noorder', 'noorder');
     }
     public function sales()
     {
