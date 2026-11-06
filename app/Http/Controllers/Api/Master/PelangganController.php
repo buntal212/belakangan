@@ -15,7 +15,12 @@ class PelangganController extends Controller
         $list =  Pelanggan::whereNull('flaging')
         ->when(request('q') !== '' || request('q') !== null, function($x){
             $x->where('nama', 'like', '%' . request('q') . '%')
+              ->orWhere('nama_toko', 'like', '%' . request('q') . '%')
+              ->orWhere('nama_owner', 'like', '%' . request('q') . '%')
               ->orWhere('telepon','like', '%' . request('q') . '%')
+              ->orWhere('no_tlp','like', '%' . request('q') . '%')
+              ->orWhere('no_ktp','like', '%' . request('q') . '%')
+              ->orWhere('no_npwp','like', '%' . request('q') . '%')
               ->orWhere('norek','like', '%' . request('q') . '%')
               ->orWhere('alamat','like', '%' . request('q') . '%')
               ;
@@ -35,6 +40,19 @@ class PelangganController extends Controller
 
     public function simpan(Request $request)
     {
+        $validated = $request->validate([
+            'nama_toko' => ['nullable', 'string', 'max:255'],
+            'nama_owner' => ['nullable', 'string', 'max:255'],
+            'alamat' => ['nullable', 'string', 'max:1000'],
+            'no_ktp' => ['nullable', 'string', 'max:50'],
+            'no_npwp' => ['nullable', 'string', 'max:50'],
+            'no_tlp' => ['nullable', 'string', 'max:50'],
+            'nama' => ['nullable', 'string', 'max:255'],
+            'telepon' => ['nullable', 'string', 'max:50'],
+            'norek' => ['nullable', 'string', 'max:100'],
+            'namabank' => ['nullable', 'string', 'max:255'],
+        ]);
+
         if($request->kodeplgn === '' || $request->kodeplgn === null)
         {
             $cek = Pelanggan::count();
@@ -43,16 +61,24 @@ class PelangganController extends Controller
         }else{
             $kodepelanggan = $request->kodeplgn;
         }
+        $namaToko = $validated['nama_toko'] ?? $validated['nama'] ?? null;
+        $noTlp = $validated['no_tlp'] ?? $validated['telepon'] ?? null;
         $simpan = Pelanggan::updateOrCreate(
         [
             'kodeplgn' => $kodepelanggan
         ],
         [
-            'nama' => $request->nama,
-            'alamat' => $request->alamat,
-            'telepon' => $request->telepon,
-            'norek' => $request->norek,
-            'namabank' => $request->namabank,
+            // Tetap isi kolom lama agar pilihan pelanggan pada transaksi lama tetap berjalan.
+            'nama' => $namaToko,
+            'nama_toko' => $namaToko,
+            'nama_owner' => $validated['nama_owner'] ?? null,
+            'alamat' => $validated['alamat'] ?? null,
+            'telepon' => $noTlp,
+            'no_tlp' => $noTlp,
+            'no_ktp' => $validated['no_ktp'] ?? null,
+            'no_npwp' => $validated['no_npwp'] ?? null,
+            'norek' => $validated['norek'] ?? null,
+            'namabank' => $validated['namabank'] ?? null,
         ]);
 
         return new JsonResponse(

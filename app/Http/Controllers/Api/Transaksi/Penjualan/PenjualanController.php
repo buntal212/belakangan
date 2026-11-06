@@ -108,9 +108,12 @@ class PenjualanController extends Controller
         $data = Pelanggan::whereNull('flaging')
             ->where(function ($x) {
                 $x->where('nama', 'like', '%' . request('q') . '%')
+                    ->orWhere('nama_toko', 'like', '%' . request('q') . '%')
+                    ->orWhere('nama_owner', 'like', '%' . request('q') . '%')
                     ->orWhere('kodeplgn', 'like', '%' . request('q') . '%')
                     ->orWhere('namabank', 'like', '%' . request('q') . '%')
                     ->orWhere('telepon', 'like', '%' . request('q') . '%')
+                    ->orWhere('no_tlp', 'like', '%' . request('q') . '%')
                     ->orWhere('alamat', 'like', '%' . request('q') . '%');
             })
             ->limit(request('limit'))
