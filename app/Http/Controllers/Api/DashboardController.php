@@ -20,23 +20,45 @@ class DashboardController extends Controller
         $previousYear = $year - 1;
 
         // Pendapatan operasional memakai dasar yang sama dengan laba-rugi:
-        // subtotal rincian sebelum PPN, dikurangi retur yang disetujui.
+        // DPP penjualan (subtotal setelah diskon item dikurangi diskon nota kuitansi, tanpa PPN),
+        // dikurangi DPP retur yang berstatus selesai ('1').
         $flagPenjualanValid = ['2', '3', '4', '5', '7', '8'];
         $validSales = HeaderPenjualan::query()->whereIn('flag', $flagPenjualanValid);
 
-        $penjualanBulanan = DB::table('detail_penjualans as detail')
-            ->join('header_penjualans as header', 'header.no_penjualan', '=', 'detail.no_penjualan')
+        $penjualanBulanan = DB::table('header_penjualans as header')
             ->whereIn('header.flag', $flagPenjualanValid)
             ->whereYear('header.tgl', '>=', $previousYear)
-            ->selectRaw('YEAR(header.tgl) as tahun, MONTH(header.tgl) as bulan, SUM(detail.subtotal) as subtotal')
+            ->selectRaw('
+                YEAR(header.tgl) as tahun,
+                MONTH(header.tgl) as bulan,
+                SUM(GREATEST(
+                    CASE 
+                        WHEN header.ppn_nominal > 0 THEN header.total - header.ppn_nominal
+                        ELSE COALESCE(header.subtotal, header.total) - COALESCE(header.diskon_kuitansi, 0)
+                    END,
+                    0
+                )) as subtotal
+            ')
             ->groupByRaw('YEAR(header.tgl), MONTH(header.tgl)')
             ->get();
 
         $returBulanan = DB::table('header_retur_penjualans as header_retur')
-            ->join('detail_retur_penjualans as detail_retur', 'detail_retur.header_retur_penjualan_id', '=', 'header_retur.id')
-            ->where('header_retur.status', 1)
+            ->where('header_retur.status', '1')
             ->whereYear('header_retur.tgl', '>=', $previousYear)
-            ->selectRaw('YEAR(header_retur.tgl) as tahun, MONTH(header_retur.tgl) as bulan, SUM(detail_retur.subtotal) as subtotal')
+            ->selectRaw('
+                YEAR(header_retur.tgl) as tahun,
+                MONTH(header_retur.tgl) as bulan,
+                SUM(GREATEST(
+                    COALESCE(
+                        header_retur.dpp,
+                        CASE 
+                            WHEN header_retur.ppn_nominal > 0 THEN header_retur.total - header_retur.ppn_nominal
+                            ELSE COALESCE(header_retur.subtotal, header_retur.total) - COALESCE(header_retur.diskon_kuitansi, 0)
+                        END
+                    ),
+                    0
+                )) as subtotal
+            ')
             ->groupByRaw('YEAR(header_retur.tgl), MONTH(header_retur.tgl)')
             ->get();
 
@@ -66,12 +88,24 @@ class DashboardController extends Controller
             ->first(fn (array $item) => $item['tahun'] === $year && $item['bulan'] === $bulanIni);
         $pendapatanBulanIni = (float) ($ringkasanBulanIni['subtotal'] ?? 0);
 
+        $returBarangTahun = DB::table('detail_retur_penjualans as dr')
+            ->join('header_retur_penjualans as hr', 'hr.id', '=', 'dr.header_retur_penjualan_id')
+            ->where('hr.status', '1')
+            ->whereYear('hr.tgl', $year)
+            ->selectRaw('dr.kodebarang, SUM(dr.jumlah) as jumlah_retur')
+            ->groupBy('dr.kodebarang');
+
         $topProducts = DB::table('detail_penjualans as detail')
             ->join('header_penjualans as header', 'header.no_penjualan', '=', 'detail.no_penjualan')
             ->leftJoin('barangs as barang', 'barang.kodebarang', '=', 'detail.kodebarang')
+            ->leftJoinSub($returBarangTahun, 'retur', 'retur.kodebarang', '=', 'detail.kodebarang')
             ->whereIn('header.flag', $flagPenjualanValid)
             ->whereYear('header.tgl', $year)
-            ->selectRaw('detail.kodebarang, COALESCE(barang.namabarang, detail.kodebarang) as namabarang, SUM(detail.jumlah) as jumlahbarang')
+            ->selectRaw('
+                detail.kodebarang, 
+                COALESCE(barang.namabarang, detail.kodebarang) as namabarang, 
+                GREATEST(SUM(detail.jumlah) - COALESCE(MAX(retur.jumlah_retur), 0), 0) as jumlahbarang
+            ')
             ->groupBy('detail.kodebarang', 'barang.namabarang')
             ->orderByDesc('jumlahbarang')
             ->limit(10)
@@ -84,6 +118,8 @@ class DashboardController extends Controller
             '4' => 'Dibawa Sales',
             '5' => 'Lunas',
             '6' => 'Batal',
+            '7' => 'Down Payment (DP)',
+            '8' => 'Tempo',
         ];
 
         $statusDistribution = HeaderPenjualan::query()
@@ -147,7 +183,7 @@ class DashboardController extends Controller
             ]);
 
         $recentReceivablePayments = HeaderCicilan::query()
-            ->with('pelanggan:id,nama')
+            ->with(['pelanggan:id,nama', 'cicilan'])
             ->whereNotNull('nopembayaran')
             ->latest('tgl_bayar')
             ->latest('id')
@@ -157,7 +193,7 @@ class DashboardController extends Controller
                 'nomor' => $payment->nopembayaran,
                 'tanggal' => $payment->tgl_bayar,
                 'pihak' => $payment->pelanggan?->nama ?? 'Umum',
-                'total' => (float) $payment->jumlah,
+                'total' => (float) ((float) $payment->jumlah > 0 ? $payment->jumlah : $payment->cicilan->sum('jumlah')),
                 'keterangan' => $payment->cara_bayar ?? 'Pembayaran Piutang',
             ]);
 
@@ -168,10 +204,9 @@ class DashboardController extends Controller
             ->selectRaw('no_penjualan, SUM(jumlah) as total_cicilan')
             ->groupBy('no_penjualan');
         $returPerNota = DB::table('header_retur_penjualans as header_retur')
-            ->join('detail_retur_penjualans as detail_retur', 'detail_retur.header_retur_penjualan_id', '=', 'header_retur.id')
-            ->where('header_retur.status', 1)
-            ->selectRaw('detail_retur.no_penjualan, SUM(detail_retur.subtotal) as total_retur')
-            ->groupBy('detail_retur.no_penjualan');
+            ->where('header_retur.status', '1')
+            ->selectRaw('header_retur.no_penjualan, SUM(header_retur.total) as total_retur')
+            ->groupBy('header_retur.no_penjualan');
 
         $piutangJatuhTempo = DB::table('header_penjualans as penjualan')
             ->leftJoin('pelanggans as pelanggan', 'pelanggan.id', '=', 'penjualan.pelanggan_id')

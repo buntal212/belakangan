@@ -167,13 +167,13 @@ class CicilanController extends Controller
         }
 
 
-        // kemmbalikan flag menjadi 2
-        HeaderPenjualan::find($request->id)->update(['flag' => '2']);
-        $hutang = HeaderPenjualan::where('pelanggan_id', $request->pelanggan_id)->whereIn('flag', ['2', '3', '4'])
+        $hutang = HeaderPenjualan::where('pelanggan_id', $request->pelanggan_id)
+            ->whereIn('flag', ['2', '3', '4', '7', '8'])
+            ->orderBy('tgl', 'asc')
             ->orderBy('no_penjualan', 'asc')
             ->get();
 
-        $jumlahCicilan = $request->jumlah;
+        $jumlahCicilan = (float) $request->jumlah;
         $headerCicilan = HeaderCicilan::create([
             'pelanggan_id' => $request->pelanggan_id,
             'sales_id' => $request->sales_id,
@@ -184,9 +184,13 @@ class CicilanController extends Controller
         $dibayar = [];
         foreach ($hutang as $key) {
             if ($jumlahCicilan <= 0) break;
-            $retur = HeaderReturPenjualan::where('no_penjualan', $key->no_penjualan)->where('status', '=', '1')->sum('total');
-            $cicilan = PembayaranCicilan::where('no_penjualan', $key->no_penjualan)->sum('jumlah');
-            $sisa = (float)$key->total - (float)$key->bayar - (float)$cicilan - (float)$retur;
+            $retur = (float) HeaderReturPenjualan::where('no_penjualan', $key->no_penjualan)->where('status', '=', '1')->sum('total');
+            $cicilan = (float) PembayaranCicilan::where('no_penjualan', $key->no_penjualan)->sum('jumlah');
+            $sisa = max(0, round((float)$key->total - (float)$key->bayar - $cicilan - $retur, 2));
+            if ($sisa <= 0) {
+                $key->update(['flag' => '5']);
+                continue;
+            }
             $pengurang = min($sisa, $jumlahCicilan);
 
             PembayaranCicilan::create([
@@ -195,7 +199,8 @@ class CicilanController extends Controller
                 'header_ciclan_id' => $headerCicilan->id,
                 'jumlah' => $pengurang,
             ]);
-            if ($sisa <= $jumlahCicilan) {
+            $sisaSetelahBayar = round($sisa - $pengurang, 2);
+            if ($sisaSetelahBayar <= 0.001) {
                 $dibayar[] = [
                     'key' => $key,
                     'pengurang' => $pengurang
@@ -231,13 +236,16 @@ class CicilanController extends Controller
                     'message' => 'Terjadi Kesalahan, Data penjualan tidak ditemukan '
                 ], 410);
             }
-            $jumlahBayar = $request->jumlah;
-            $jumlah = (float)$headerPenjualan->total - (float)$headerPenjualan->bayar; // ini jumlah hutang
-            if ((float) $jumlah != (float) $jumlahBayar) {
+            $jumlahBayar = (float) $request->jumlah;
+            $retur = (float) HeaderReturPenjualan::where('no_penjualan', $headerPenjualan->no_penjualan)->where('status', '1')->sum('total');
+            $cicilan = (float) PembayaranCicilan::where('no_penjualan', $headerPenjualan->no_penjualan)->sum('jumlah');
+            $sisaHutang = max(0, round((float)$headerPenjualan->total - (float)$headerPenjualan->bayar - $cicilan - $retur, 2));
+
+            if (abs($sisaHutang - $jumlahBayar) > 0.01) {
                 if ($headerPenjualan->pelanggan_id == null) {
-                    throw new \Exception('Karena bukan pelanggan, maka harus lunas dan jumlah pembayaran harus pas');
+                    throw new \Exception('Karena bukan pelanggan, maka harus lunas dan jumlah pembayaran harus pas (Sisa: ' . $sisaHutang . ')');
                 } else if ($headerPenjualan->sales_id == null) {
-                    throw new \Exception('Karena Sales tidak ditemukan, maka harus lunas dan jumlah pembayaran harus pas');
+                    throw new \Exception('Karena Sales tidak ditemukan, maka harus lunas dan jumlah pembayaran harus pas (Sisa: ' . $sisaHutang . ')');
                 } else {
                     $result = $this->ackSimpanCicilan($request);
                 }
@@ -313,8 +321,10 @@ class CicilanController extends Controller
         ]);
         $flag = '3';
         $message = 'Cicilan Sudah Dibayarkan';
-        $sum = PembayaranCicilan::where('no_penjualan', $data->no_penjualan)->sum('jumlah');
-        if ($sum >= ($data->total - $data->total_diskon)) {
+        $sum = (float) PembayaranCicilan::where('no_penjualan', $data->no_penjualan)->sum('jumlah');
+        $retur = (float) HeaderReturPenjualan::where('no_penjualan', $data->no_penjualan)->where('status', '1')->sum('total');
+        $sisa = round((float)$data->total - (float)$data->bayar - $sum - $retur, 2);
+        if ($sisa <= 0.001) {
             $flag = '5';
             $message = 'Nota Sudah Lunas';
         }
@@ -356,10 +366,15 @@ class CicilanController extends Controller
         $cicil->delete();
 
         if ($data) {
-            $flag = '3';
-            $sum = PembayaranCicilan::where('no_penjualan', $data->no_penjualan)->sum('jumlah');
-            if ($sum >= ($data->total - $data->total_diskon)) {
+            $sum = (float) PembayaranCicilan::where('no_penjualan', $data->no_penjualan)->sum('jumlah');
+            $retur = (float) HeaderReturPenjualan::where('no_penjualan', $data->no_penjualan)->where('status', '1')->sum('total');
+            $sisa = round((float)$data->total - (float)$data->bayar - $sum - $retur, 2);
+            if ($sisa <= 0.001) {
                 $flag = '5';
+            } else if ($sum > 0) {
+                $flag = '3';
+            } else {
+                $flag = ((float)$data->bayar > 0) ? '7' : '2';
             }
             $data->update([
                 'flag' => $flag

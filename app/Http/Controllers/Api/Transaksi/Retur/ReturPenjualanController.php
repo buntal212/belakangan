@@ -274,10 +274,7 @@ class ReturPenjualanController extends Controller
                 ]
             );
 
-            $total = DetailReturPenjualan::where('header_retur_penjualan_id', $headRetur->id)->sum('subtotal');
-            $headRetur->update([
-                'total' => max(0.0, round($total, 2)),
-            ]);
+            $this->syncHeaderReturTotals($headRetur, $request->no_penjualan);
 
             DB::commit();
 
@@ -402,10 +399,24 @@ class ReturPenjualanController extends Controller
                 }
             }
 
+            // Sinkronkan nominal snapshot retur sebelum status difinalisasi
+            $this->syncHeaderReturTotals($headRetur, $no_penjualan);
+
             // ganti status header retur
             $headRetur->update([
                 'status' => '1',
             ]);
+
+            // Sinkronkan flag penjualan jika sisa piutang tertutup lunas oleh retur
+            $pjNota = HeaderPenjualan::where('no_penjualan', $no_penjualan)->first();
+            if ($pjNota && in_array($pjNota->flag, ['2', '3', '4', '7', '8'])) {
+                $cicilanNota = (float) \App\Models\Transaksi\Penjualan\PembayaranCicilan::where('no_penjualan', $no_penjualan)->sum('jumlah');
+                $returNota = (float) HeaderReturPenjualan::where('no_penjualan', $no_penjualan)->where('status', '1')->sum('total');
+                $sisaNota = round((float) $pjNota->total - (float) $pjNota->bayar - $cicilanNota - $returNota, 2);
+                if ($sisaNota <= 0.001) {
+                    $pjNota->update(['flag' => '5']);
+                }
+            }
 
             $headRetur->load([
                 'detail.masterBarang',
@@ -454,5 +465,105 @@ class ReturPenjualanController extends Controller
                 'trace' => $e->getTrace(),
             ], 410);
         }
+    }
+
+    /**
+     * Hitung snapshot nominal retur (subtotal, diskon nota, dpp, ppn, total)
+     * berdasarkan snapshot nota penjualan asli serta alokasi retur selesai terdahulu.
+     */
+    private function syncHeaderReturTotals(HeaderReturPenjualan $headRetur, string $noPenjualan): void
+    {
+        $subtotalRetur = (float) DetailReturPenjualan::where('header_retur_penjualan_id', $headRetur->id)->sum('subtotal');
+
+        $penjualan = HeaderPenjualan::where('no_penjualan', $noPenjualan)
+            ->with(['detail'])
+            ->first();
+
+        if (!$penjualan) {
+            $headRetur->update([
+                'subtotal' => $subtotalRetur,
+                'diskon_kuitansi' => 0.0,
+                'dpp' => $subtotalRetur,
+                'ppn_persen' => 0.0,
+                'ppn_nominal' => 0.0,
+                'total' => max(0.0, round($subtotalRetur, 2)),
+            ]);
+            return;
+        }
+
+        $subtotalNota = (float) ($penjualan->subtotal > 0 ? $penjualan->subtotal : $penjualan->detail->sum('subtotal'));
+        if ($subtotalNota <= 0) {
+            $subtotalNota = (float) $penjualan->total;
+        }
+
+        $diskonNota = (float) ($penjualan->diskon_kuitansi ?? 0);
+        $ppnPersen = (float) ($penjualan->ppn_persen ?? 0);
+        $ppnNominal = (float) ($penjualan->ppn_nominal ?? 0);
+        $totalNota = (float) $penjualan->total;
+
+        // Jika transaksi historis tanpa snapshot diskon nota atau PPN (Rule 6)
+        $hasSnapshot = ($diskonNota > 0 || $ppnNominal > 0 || $ppnPersen > 0);
+        if (!$hasSnapshot) {
+            $headRetur->update([
+                'subtotal' => $subtotalRetur,
+                'diskon_kuitansi' => 0.0,
+                'dpp' => $subtotalRetur,
+                'ppn_persen' => 0.0,
+                'ppn_nominal' => 0.0,
+                'total' => max(0.0, round($subtotalRetur, 2)),
+            ]);
+            return;
+        }
+
+        // Akumulasi retur selesai lainnya untuk nota ini
+        $prevCompleted = HeaderReturPenjualan::where('no_penjualan', $noPenjualan)
+            ->where('status', '1')
+            ->where('id', '!=', $headRetur->id)
+            ->get();
+
+        $subtotalSelesaiLain = (float) $prevCompleted->sum('subtotal');
+        $diskonSelesaiLain = (float) $prevCompleted->sum('diskon_kuitansi');
+        $dppSelesaiLain = (float) $prevCompleted->sum('dpp');
+        $ppnSelesaiLain = (float) $prevCompleted->sum('ppn_nominal');
+        $totalSelesaiLain = (float) $prevCompleted->sum('total');
+
+        $totalSubtotalKumulatif = $subtotalSelesaiLain + $subtotalRetur;
+        $isSisaTerakhir = ($subtotalNota > 0 && $totalSubtotalKumulatif >= round($subtotalNota - 0.01, 2));
+
+        if ($isSisaTerakhir) {
+            // Sisa alokasi terakhir untuk mencegah selisih pembulatan (Rule 5)
+            $diskonRetur = max(0.0, round($diskonNota - $diskonSelesaiLain, 2));
+            $dppRetur = max(0.0, round(($subtotalNota - $diskonNota) - $dppSelesaiLain, 2));
+            $ppnRetur = max(0.0, round($ppnNominal - $ppnSelesaiLain, 2));
+            $totalRetur = max(0.0, round($totalNota - $totalSelesaiLain, 2));
+        } else {
+            // Retur proporsional parsial (Rule 4 & 5)
+            $rasio = $subtotalNota > 0 ? ($subtotalRetur / $subtotalNota) : 0;
+            $sisaDiskonBoleh = max(0.0, round($diskonNota - $diskonSelesaiLain, 2));
+            $diskonRetur = min($sisaDiskonBoleh, round($diskonNota * $rasio, 2));
+
+            $dppRetur = max(0.0, round($subtotalRetur - $diskonRetur, 2));
+
+            $sisaPpnBoleh = max(0.0, round($ppnNominal - $ppnSelesaiLain, 2));
+            if ($ppnPersen > 0) {
+                $ppnRetur = min($sisaPpnBoleh, round($dppRetur * ($ppnPersen / 100), 2));
+            } else if ($ppnNominal > 0 && ($subtotalNota - $diskonNota) > 0) {
+                $ppnRetur = min($sisaPpnBoleh, round($ppnNominal * ($dppRetur / ($subtotalNota - $diskonNota)), 2));
+            } else {
+                $ppnRetur = 0.0;
+            }
+
+            $sisaTotalBoleh = max(0.0, round($totalNota - $totalSelesaiLain, 2));
+            $totalRetur = min($sisaTotalBoleh, round($dppRetur + $ppnRetur, 2));
+        }
+
+        $headRetur->update([
+            'subtotal' => $subtotalRetur,
+            'diskon_kuitansi' => $diskonRetur,
+            'dpp' => $dppRetur,
+            'ppn_persen' => $ppnPersen,
+            'ppn_nominal' => $ppnRetur,
+            'total' => max(0.0, round($totalRetur, 2)),
+        ]);
     }
 }

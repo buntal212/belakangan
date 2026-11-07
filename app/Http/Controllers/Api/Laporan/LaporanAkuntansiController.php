@@ -34,102 +34,121 @@ class LaporanAkuntansiController extends Controller
             $startOfMonth = Carbon::parse($from)->startOfMonth()->format('Y-m-d');
             $endOfMonth   = Carbon::parse($to)->endOfMonth()->format('Y-m-d');
 
-            // Penjualan Lunas
-            $totalLunas = DB::table('header_penjualans')
-                ->where('flag', 5)
+            // Penjualan Tunai Langsung (Kasir)
+            // Hanya menghitung kas masuk riil dari penjualan tunai tanpa kredit/cicilan
+            $totalTunai = (float) DB::table('header_penjualans')
+                ->whereNotIn('flag', ['6']) // bukan batal
+                ->where(function ($q) {
+                    $q->whereIn('cara_bayar', ['Tunai', 'cash', 'Cash'])
+                        ->orWhere(function ($sub) {
+                            $sub->where('flag', '5')
+                                ->whereNull('tempo')
+                                ->whereNotIn('no_penjualan', function ($c) {
+                                    $c->select('no_penjualan')->from('pembayaran_cicilans');
+                                });
+                        });
+                })
                 ->whereBetween('tgl', [$startOfMonth . ' 00:00:00', $endOfMonth . ' 23:59:59'])
-                ->leftJoin('detail_penjualan_fifos', 'detail_penjualan_fifos.no_penjualan', '=', 'header_penjualans.no_penjualan')
-                ->sum('detail_penjualan_fifos.subtotal');
+                ->sum(DB::raw('LEAST(COALESCE(bayar, 0), COALESCE(total, 0))'));
 
-            // Penjualan Menggunakan DP (flag = 7)
-            $totalDP = DB::table('header_penjualans')
-                ->where('flag', 7)
+            // Uang Muka (DP) dari transaksi tempo/kredit yang diterima pada bulan berjalan
+            $totalDP = (float) DB::table('header_penjualans')
+                ->whereNotIn('flag', ['6'])
+                ->where(function ($q) {
+                    $q->whereIn('flag', ['2', '3', '4', '7', '8'])
+                        ->orWhere('cara_bayar', 'Tempo')
+                        ->orWhere('cara_bayar', 'Cicilan')
+                        ->orWhereNotNull('tempo')
+                        ->orWhereRaw('bayar < total');
+                })
+                ->where('bayar', '>', 0)
                 ->whereBetween('tgl', [$startOfMonth . ' 00:00:00', $endOfMonth . ' 23:59:59'])
                 ->sum('bayar');
 
-            $totalCicilan = DB::table('pembayaran_cicilans')
-                    ->whereBetween('tgl_bayar', [$startOfMonth . ' 00:00:00', $endOfMonth . ' 23:59:59'])
-                    ->sum('jumlah');
-            $totalPendapatan = $totalLunas + $totalDP;
+            // Penerimaan Cicilan Piutang pada bulan berjalan
+            $totalCicilan = (float) DB::table('pembayaran_cicilans')
+                ->whereBetween('tgl_bayar', [$startOfMonth . ' 00:00:00', $endOfMonth . ' 23:59:59'])
+                ->sum('jumlah');
 
-            // kalau arusKasMasuk kosong → fallback ke pendapatan penjualan
+            $totalPendapatan = $totalTunai + $totalDP;
             $totalMasuk = $totalPendapatan + $totalCicilan;
+
             $arusKasMasuk = [
                 [
                     'akun' => '0001-IN',
-                    'keterangan' => 'Pendapatan Penjualan',
-                    'total' => $totalPendapatan
+                    'keterangan' => 'Pendapatan Penjualan Tunai & DP',
+                    'total' => $totalPendapatan,
                 ],
                 [
                     'akun' => '0002-IN',
-                    'keterangan' => 'Pendapatan dari Cicilan',
-                    'total' => $totalCicilan
-                ]
+                    'keterangan' => 'Pendapatan dari Cicilan Piutang',
+                    'total' => $totalCicilan,
+                ],
             ];
         } else {
             // kalau ada data normal
             $totalMasuk = $arusKasMasuk->sum('total');
         }
 
-
         // Kas keluar
         $arusKasKeluar = OpnamePengeluaran::whereBetween('tgl_opname', [$from, $to])
             ->groupBy('akun', 'keterangan')
             ->selectRaw('akun, keterangan, SUM(nilai) as total')
             ->get();
+
         if ($arusKasKeluar->isEmpty()) {
             $startOfMonth = Carbon::parse($from)->startOfMonth()->format('Y-m-d');
             $endOfMonth   = Carbon::parse($to)->endOfMonth()->format('Y-m-d');
 
-            $pembelianBarang = DB::table('penerimaan_h')
-                    ->where('kunci', 1)
-                    ->where('jenis_pembayaran', 'Cash')
-                    ->whereBetween('tgl_faktur', [$startOfMonth, $endOfMonth])
-                    ->leftJoin('penerimaan_r', 'penerimaan_r.nopenerimaan', '=', 'penerimaan_h.nopenerimaan')
-                    ->sum('penerimaan_r.subtotalfix');
+            $pembelianBarang = (float) DB::table('penerimaan_h')
+                ->where('kunci', 1)
+                ->where('jenis_pembayaran', 'Cash')
+                ->whereBetween('tgl_faktur', [$startOfMonth, $endOfMonth])
+                ->leftJoin('penerimaan_r', 'penerimaan_r.nopenerimaan', '=', 'penerimaan_h.nopenerimaan')
+                ->sum('penerimaan_r.subtotalfix');
 
-            $bebankeluar = DB::table('transbeban_headers')
-                    ->where('flaging', 1)
-                    ->whereBetween('tgl', [$startOfMonth, $endOfMonth])
-                    ->leftJoin('transbeban_rincis', 'transbeban_rincis.notrans', '=', 'transbeban_headers.notrans')
-                    ->sum('transbeban_rincis.subtotal');
-            $returpenjualan = DB::table('header_retur_penjualans')
-                    ->where('status', 1)
-                    ->whereBetween('tgl', [$startOfMonth . ' 00:00:00', $endOfMonth . ' 23:59:59'])
-                    ->leftJoin('detail_retur_penjualans', 'detail_retur_penjualans.header_retur_penjualan_id', '=', 'header_retur_penjualans.id')
-                    ->sum('detail_retur_penjualans.subtotal');
-            $Pembayaranhutang = DB::table('pembayaran_hutang_h')
-                    ->whereBetween('tgl_bayar', [$startOfMonth, $endOfMonth])
-                    ->leftJoin('pembayaran_hutang_r', 'pembayaran_hutang_r.notrans', '=', 'pembayaran_hutang_h.notrans')
-                    ->sum('pembayaran_hutang_r.total');
+            $bebankeluar = (float) DB::table('transbeban_headers')
+                ->where('flaging', 1)
+                ->whereBetween('tgl', [$startOfMonth, $endOfMonth])
+                ->leftJoin('transbeban_rincis', 'transbeban_rincis.notrans', '=', 'transbeban_headers.notrans')
+                ->sum('transbeban_rincis.subtotal');
+
+            // Retur yang memotong piutang atau menghasilkan hak pengembalian BELUM merupakan kas keluar.
+            // Kas keluar hanya terjadi jika ada bukti pengeluaran kas refund riil.
+            $returpenjualan = 0.0;
+
+            $Pembayaranhutang = (float) DB::table('pembayaran_hutang_h')
+                ->whereBetween('tgl_bayar', [$startOfMonth, $endOfMonth])
+                ->leftJoin('pembayaran_hutang_r', 'pembayaran_hutang_r.notrans', '=', 'pembayaran_hutang_h.notrans')
+                ->sum('pembayaran_hutang_r.total');
 
             $totalKeluar = $pembelianBarang + $bebankeluar + $returpenjualan + $Pembayaranhutang;
             $arusKasKeluar = [
                 [
                     'akun' => '0001-OUT',
                     'keterangan' => 'Pembelian Langsung',
-                    'total' => $pembelianBarang
+                    'total' => $pembelianBarang,
                 ],
                 [
                     'akun' => '0002-OUT',
                     'keterangan' => 'Beban Pengeluaran',
-                    'total' => $bebankeluar
+                    'total' => $bebankeluar,
                 ],
                 [
                     'akun' => '0003-OUT',
-                    'keterangan' => 'Retur Penjualan',
-                    'total' => $returpenjualan
+                    'keterangan' => 'Retur Penjualan (Refund Kas Riil)',
+                    'total' => $returpenjualan,
                 ],
                 [
                     'akun' => '0004-OUT',
-                    'keterangan' => 'Pembayaran Hutang',
-                    'total' => $Pembayaranhutang
-                ]
+                    'keterangan' => 'Pembayaran Hutang Supplier',
+                    'total' => $Pembayaranhutang,
+                ],
             ];
         } else {
-                    // kalau ada data normal
-                    $totalKeluar = $arusKasKeluar->sum('total');
-                }
+            // kalau ada data normal
+            $totalKeluar = $arusKasKeluar->sum('total');
+        }
 
 
         $kenaikanKas = $totalMasuk - $totalKeluar;
@@ -153,46 +172,66 @@ class LaporanAkuntansiController extends Controller
         $from = Carbon::createFromFormat('Y-m-d', "$tahun-$bulan-01")->startOfMonth()->format('Y-m-d 00:00:00');
         $to   = Carbon::createFromFormat('Y-m-d', "$tahun-$bulan-01")->endOfMonth()->format('Y-m-d 23:59:59');
 
-        // Jangan menggunakan snapshot opname untuk pendapatan karena nilainya
-        // dapat tertinggal. Dasar pendapatan harus sama dengan dashboard:
-        // subtotal penjualan sebelum PPN dikurangi retur yang disetujui.
+        // Pendapatan memakai dasar yang sama dengan Dashboard:
+        // DPP Penjualan Bruto (subtotal barang dikurangi diskon kuitansi nota, sebelum PPN)
+        // dikurangi DPP Retur Penjualan Selesai (status = '1').
         $flagPenjualanValid = ['2', '3', '4', '5', '7', '8'];
-        $penjualanSemua = (float) DB::table('detail_penjualans as detail')
-            ->join('header_penjualans as header', 'header.no_penjualan', '=', 'detail.no_penjualan')
+        $penjualanSemua = (float) DB::table('header_penjualans as header')
             ->whereIn('header.flag', $flagPenjualanValid)
             ->whereBetween('header.tgl', [$from, $to])
-            ->sum('detail.subtotal');
+            ->sum(DB::raw('GREATEST(
+                CASE 
+                    WHEN header.ppn_nominal > 0 THEN header.total - header.ppn_nominal
+                    ELSE COALESCE(header.subtotal, header.total) - COALESCE(header.diskon_kuitansi, 0)
+                END,
+                0
+            )'));
 
-        $returpenjualan = (float) DB::table('header_retur_penjualans')
-            ->where('status', 1)
-            ->whereBetween('tgl', [$from, $to])
-            ->leftJoin('detail_retur_penjualans', 'detail_retur_penjualans.header_retur_penjualan_id', '=', 'header_retur_penjualans.id')
-            ->sum('detail_retur_penjualans.subtotal');
+        $returpenjualan = (float) DB::table('header_retur_penjualans as header_retur')
+            ->where('header_retur.status', '1')
+            ->whereBetween('header_retur.tgl', [$from, $to])
+            ->sum(DB::raw('GREATEST(
+                COALESCE(
+                    header_retur.dpp,
+                    CASE 
+                        WHEN header_retur.ppn_nominal > 0 THEN header_retur.total - header_retur.ppn_nominal
+                        ELSE COALESCE(header_retur.subtotal, header_retur.total) - COALESCE(header_retur.diskon_kuitansi, 0)
+                    END
+                ),
+                0
+            )'));
 
-        $totalPenjualan = $penjualanSemua - $returpenjualan;
+        $totalPenjualan = max(0.0, round($penjualanSemua - $returpenjualan, 2));
         $penjualan = [[
             'akun' => '0001-PNJ',
             'keterangan' => 'Penjualan Bersih (tanpa PPN)',
             'total' => $totalPenjualan,
         ]];
 
-        $hpp =  DB::table('header_penjualans')
-            ->whereBetween('tgl', [$from, $to])
-            ->whereIn('flag', $flagPenjualanValid)
-            ->leftJoin('detail_penjualan_fifos', 'detail_penjualan_fifos.no_penjualan', '=', 'header_penjualans.no_penjualan')
-            ->sum(DB::raw('(detail_penjualan_fifos.jumlah * detail_penjualan_fifos.harga_beli)'));
+        $hpp = (float) DB::table('header_penjualans as header')
+            ->whereBetween('header.tgl', [$from, $to])
+            ->whereIn('header.flag', $flagPenjualanValid)
+            ->leftJoin('detail_penjualan_fifos as fifo', 'fifo.no_penjualan', '=', 'header.no_penjualan')
+            ->sum(DB::raw('fifo.jumlah * fifo.harga_beli'));
 
-        $returhpp = DB::table('header_retur_penjualans')
-                ->where('status', 1)
-                ->whereBetween('tgl', [$from . ' 00:00:00', $to . ' 23:59:59'])
-                ->leftJoin('detail_retur_penjualans', 'detail_retur_penjualans.header_retur_penjualan_id', '=', 'header_retur_penjualans.id')
-                ->leftJoin('detail_penjualan_fifos', function($join) {
-                        $join->on('detail_penjualan_fifos.no_penjualan', '=', 'detail_retur_penjualans.no_penjualan')
-                            ->on('detail_penjualan_fifos.kodebarang', '=', 'detail_retur_penjualans.kodebarang');
-                    })
-                ->sum(DB::raw('(detail_retur_penjualans.jumlah * detail_penjualan_fifos.harga_beli)'));
-        $nilaihpp = $hpp - $returhpp;
-        $labaKotor = $totalPenjualan - $nilaihpp;
+        // Perhitungan HPP retur FIFO yang tepat (mencegah duplikasi batch jika barang terjual dipecah ke beberapa batch)
+        $fifoCostPerBarang = DB::table('detail_penjualan_fifos')
+            ->selectRaw('no_penjualan, kodebarang, SUM(jumlah * harga_beli) as total_cost, SUM(jumlah) as total_qty')
+            ->groupBy('no_penjualan', 'kodebarang');
+
+        $returhpp = (float) DB::table('header_retur_penjualans as hr')
+            ->join('detail_retur_penjualans as dr', 'dr.header_retur_penjualan_id', '=', 'hr.id')
+            ->joinSub($fifoCostPerBarang, 'fifo', function ($join) {
+                $join->on('fifo.no_penjualan', '=', 'dr.no_penjualan')
+                    ->on('fifo.kodebarang', '=', 'dr.kodebarang');
+            })
+            ->where('hr.status', '1')
+            ->whereBetween('hr.tgl', [$from, $to])
+            ->where('fifo.total_qty', '>', 0)
+            ->sum(DB::raw('(dr.jumlah * (fifo.total_cost / fifo.total_qty))'));
+
+        $nilaihpp = max(0.0, round($hpp - $returhpp, 2));
+        $labaKotor = round($totalPenjualan - $nilaihpp, 2);
 
         //     $returpenjualan = DB::table('header_retur_penjualans')
         //         ->where('status', 1)
@@ -323,55 +362,82 @@ class LaporanAkuntansiController extends Controller
             $startOfMonth = Carbon::parse($from)->startOfMonth()->format('Y-m-d');
             $endOfMonth   = Carbon::parse($to)->endOfMonth()->format('Y-m-d');
 
-            $penjualanDP= DB::table('header_penjualans')
-                ->where('flag', '!=', 5)
+            // Identifikasi transaksi penjualan kredit / bertempo yang dibuat pada bulan ini
+            $isCreditSale = function ($q) {
+                $q->whereIn('flag', ['2', '3', '4', '7', '8'])
+                    ->orWhere('cara_bayar', 'Tempo')
+                    ->orWhere('cara_bayar', 'Cicilan')
+                    ->orWhereNotNull('tempo')
+                    ->orWhereRaw('bayar < total');
+            };
+
+            // Piutang Baru yang Timbul (Total Tagihan Kredit)
+            $penjualanDP = (float) DB::table('header_penjualans')
+                ->whereNotIn('flag', ['6'])
+                ->where($isCreditSale)
                 ->whereBetween('tgl', [$startOfMonth . ' 00:00:00', $endOfMonth . ' 23:59:59'])
-                ->leftJoin('detail_penjualan_fifos', 'detail_penjualan_fifos.no_penjualan', '=', 'header_penjualans.no_penjualan')
-                ->sum('detail_penjualan_fifos.subtotal');
+                ->sum('total');
 
-            $piutangterbayar=DB::table('header_penjualans')
-                ->where('flag', '!=', 5)
-                // ->whereBetween('header_penjualans.tgl', [$startOfMonth . ' 00:00:00', $endOfMonth . ' 23:59:59'])
-                ->leftJoin('pembayaran_cicilans', function ($join) use ($startOfMonth, $endOfMonth) {
-                    $join->on('pembayaran_cicilans.no_penjualan', '=', 'header_penjualans.no_penjualan')
-                        ->whereBetween('pembayaran_cicilans.tgl_bayar', [$startOfMonth . ' 00:00:00', $endOfMonth . ' 23:59:59']);
-                })
-                ->sum(DB::raw('COALESCE(pembayaran_cicilans.jumlah, 0)'));
+            // Pembayaran Cicilan yang diterima dalam bulan ini
+            $piutangterbayar = (float) DB::table('pembayaran_cicilans')
+                ->whereBetween('tgl_bayar', [$startOfMonth . ' 00:00:00', $endOfMonth . ' 23:59:59'])
+                ->sum('jumlah');
 
-            $totalDPx = DB::table('header_penjualans')
-                ->where('flag', '!=', 5)
+            // Uang Muka (DP) yang diterima saat transaksi kredit dibuat dalam bulan ini
+            $totalDPx = (float) DB::table('header_penjualans')
+                ->whereNotIn('flag', ['6'])
+                ->where($isCreditSale)
+                ->where('bayar', '>', 0)
                 ->whereBetween('tgl', [$startOfMonth . ' 00:00:00', $endOfMonth . ' 23:59:59'])
                 ->sum('bayar');
 
+            // Retur Penjualan yang mengurangi Piutang dalam bulan ini
+            $returPiutang = (float) DB::table('header_retur_penjualans as hr')
+                ->where('hr.status', '1')
+                ->whereBetween('hr.tgl', [$startOfMonth . ' 00:00:00', $endOfMonth . ' 23:59:59'])
+                ->whereIn('hr.no_penjualan', function ($q) use ($isCreditSale) {
+                    $q->select('no_penjualan')
+                        ->from('header_penjualans')
+                        ->whereNotIn('flag', ['6'])
+                        ->where($isCreditSale);
+                })
+                ->sum('hr.total');
+
             $datapiutang = [
-                    [
-                        'akun' => '0001-PTG',
-                        'keterangan' => 'Piutang Usaha',
-                        'totaldebit' => $penjualanDP,
-                        'totalkredit' => 0,
-                    ],
-                    [
-                        'akun' => '0002-PTG',
-                        'keterangan' => 'Uang Muka',
-                        'totaldebit' => 0,
-                        'totalkredit' => $totalDPx
-                    ],
-                     [
-                        'akun' => '0003-PTG',
-                        'keterangan' => 'Piutang Diterima',
-                        'totaldebit' => 0,
-                        'totalkredit' => $piutangterbayar
-                    ],
-                ];
+                [
+                    'akun' => '0001-PTG',
+                    'keterangan' => 'Piutang Usaha',
+                    'totaldebit' => $penjualanDP,
+                    'totalkredit' => 0,
+                ],
+                [
+                    'akun' => '0002-PTG',
+                    'keterangan' => 'Uang Muka',
+                    'totaldebit' => 0,
+                    'totalkredit' => $totalDPx,
+                ],
+                [
+                    'akun' => '0003-PTG',
+                    'keterangan' => 'Piutang Diterima',
+                    'totaldebit' => 0,
+                    'totalkredit' => $piutangterbayar,
+                ],
+                [
+                    'akun' => '0004-PTG',
+                    'keterangan' => 'Retur Penjualan',
+                    'totaldebit' => 0,
+                    'totalkredit' => $returPiutang,
+                ],
+            ];
 
             $totalDebitpiutang = $penjualanDP;
-            $totalKreditpiutang = $piutangterbayar + $totalDPx;
+            $totalKreditpiutang = $piutangterbayar + $totalDPx + $returPiutang;
         } else {
 
             $totalDebitpiutang = $datapiutang->sum('totaldebit');
             $totalKreditpiutang = $datapiutang->sum('totalkredit');
         }
-        $totalSisapiutang = $totalDebitpiutang - $totalKreditpiutang;
+        $totalSisapiutang = max(0, $totalDebitpiutang - $totalKreditpiutang);
 
         return response()->json([
             'datahutang' => $datahutang,

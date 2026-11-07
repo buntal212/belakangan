@@ -55,13 +55,12 @@ class PembayaranPiutangController extends Controller
                     $q->select('no_penjualan', DB::raw('sum(jumlah) as jumlah'))->groupBy('no_penjualan');
             },
             'headerRetur' => function ($q) {
-                $q->leftjoin('detail_retur_penjualans', 'detail_retur_penjualans.header_retur_penjualan_id', '=', 'header_retur_penjualans.id')
-                ->select('header_retur_penjualans.no_penjualan', DB::raw('sum(detail_retur_penjualans.subtotal) as subtotal'))
-                ->where('status', '!=', '')
-                ->groupBy('header_retur_penjualans.no_penjualan');
+                $q->select('no_penjualan', DB::raw('sum(total) as total'))
+                    ->where('status', '1')
+                    ->groupBy('no_penjualan');
             },
         ])
-        ->whereIn('flag', ['2', '3', '7']);
+        ->whereIn('flag', ['2', '3', '7', '8']);
         if(request('pelanggan_id') !== '0'){
             $data = $data->where('pelanggan_id', request('pelanggan_id'));
         }else{
@@ -119,28 +118,92 @@ class PembayaranPiutangController extends Controller
             ]);
         }
 
-        $totalDibayar = $rincian->sum('jumlah');
+        $returList = DB::table('header_retur_penjualans')
+            ->where('no_penjualan', $noPenjualan)
+            ->where('status', '1')
+            ->orderBy('tgl')
+            ->get([
+                'id',
+                'no_retur',
+                'tgl',
+                'total',
+                'subtotal',
+                'diskon_kuitansi',
+                'dpp',
+                'ppn_nominal',
+                'ppn_persen',
+                'status',
+            ]);
+
+        $retur = (float) $returList->sum('total');
+        $totalDibayar = (float) $rincian->sum('jumlah');
+        $totalNota = (float) $nota->total_nota;
+        $totalPengurang = $totalDibayar + $retur;
+
+        $sisaPiutang = max(0.0, round($totalNota - $totalPengurang, 2));
+        $hakPengembalian = max(0.0, round($totalPengurang - $totalNota, 2));
+        $isLunas = ($sisaPiutang <= 0.001);
+
+        $tglLunas = null;
+        if ($isLunas) {
+            $lastTglBayar = $rincian->last()?->tgl_bayar;
+            $lastTglRetur = $returList->last()?->tgl;
+            $candidates = array_filter([$lastTglBayar, $lastTglRetur]);
+            $tglLunas = !empty($candidates) ? max($candidates) : $nota->tgl_hutang;
+        }
 
         return new JsonResponse([
             'data' => [
                 'no_penjualan' => $nota->no_penjualan,
                 'nama_pelanggan' => $nota->nama_pelanggan,
                 'tgl_hutang' => $nota->tgl_hutang,
-                'total_nota' => (float) $nota->total_nota,
-                'total_dibayar_nota' => (float) $totalDibayar,
-                'sisa_piutang_nota' => max((float) $nota->total_nota - (float) $totalDibayar, 0),
+                'total_nota' => $totalNota,
+                'total_dibayar_nota' => $totalDibayar,
+                'total_retur_nota' => $retur,
+                'sisa_piutang_nota' => $sisaPiutang,
+                'hak_pengembalian' => $hakPengembalian,
+                'is_lunas' => $isLunas,
+                'tgl_lunas' => $tglLunas,
+                'status_nota' => $isLunas ? 'Lunas' : ($totalDibayar > 0 ? 'Proses Cicilan' : 'Belum Dibayar'),
                 'rincian' => $rincian->values(),
+                'daftar_retur' => $returList->values(),
             ],
         ]);
     }
 
     public function simpan(Request $request)
     {
+        $request->validate([
+            'nopenjualan' => 'required',
+            'total' => 'required|numeric|min:0.01',
+            'tgl' => 'required|date',
+        ]);
+
+        $nota = HeaderPenjualan::where('no_penjualan', $request->nopenjualan)->first();
+        if (!$nota) {
+            return new JsonResponse(['message' => 'Nota penjualan tidak ditemukan.'], 404);
+        }
+
+        $cicilanSebelumnya = (float) PembayaranCicilan::where('no_penjualan', $request->nopenjualan)->sum('jumlah');
+        $returSelesai = (float) DB::table('header_retur_penjualans')->where('no_penjualan', $request->nopenjualan)->where('status', '1')->sum('total');
+        $sisaPiutangAktual = max(0, round((float) $nota->total - (float) $nota->bayar - $cicilanSebelumnya - $returSelesai, 2));
+
+        if ((float) $request->total > ($sisaPiutangAktual + 0.01)) {
+            return new JsonResponse([
+                'message' => 'Jumlah pembayaran melebihi sisa piutang aktual (Maksimal Rp ' . number_format($sisaPiutangAktual, 0, ',', '.') . ').'
+            ], 422);
+        }
+
         if($request->nopembayaran === '' || $request->nopembayaran === null)
         {
-            DB::select('call noPembayaranPiutang(@nomor)');
-            $x = DB::table('counter')->select('nopembayaranpiutang')->get();
-            $no = $x[0]->nopembayaranpiutang;
+            try {
+                DB::select('call noPembayaranPiutang(@nomor)');
+                $x = DB::table('counter')->select('nopembayaranpiutang')->get();
+                $no = $x[0]->nopembayaranpiutang;
+            } catch (\Throwable $e) {
+                DB::table('counter')->increment('nopembayaranpiutang');
+                $no = DB::table('counter')->value('nopembayaranpiutang');
+            }
             $nopembayaran = FormatingHelper::nopembayaranhutang($no, 'BP');
         }else{
             $nopembayaran = $request->nopembayaran;
@@ -168,27 +231,33 @@ class PembayaranPiutangController extends Controller
                     'user' => Auth::id(),
             ]);
 
-
             $datax = PembayaranCicilan::create(
                 [
                     'no_penjualan' => $request->nopenjualan,
                     'header_ciclan_id' => $data->id,
                     'jumlah' => $request->total,
-                     'tgl_bayar' => $request->tgl,
+                    'tgl_bayar' => $request->tgl,
                     'user' => Auth::id(),
                 ]
             );
 
-            // $flagpenerimaan = Penerimaan_h::where('nopenerimaan', $request->nopenerimaan)->first();
-            // $flagpenerimaan->flagingHutang = '1';
-            // $flagpenerimaan->save();
+            // Sinkronkan total jumlah di HeaderCicilan
+            $totalHeaderCicilan = (float) PembayaranCicilan::where('header_ciclan_id', $data->id)->sum('jumlah');
+            $data->update(['jumlah' => $totalHeaderCicilan]);
+
+            // Sinkronkan flag di HeaderPenjualan
+            $totalCicilanBaru = $cicilanSebelumnya + (float) $request->total;
+            $sisaBaru = round((float) $nota->total - (float) $nota->bayar - $totalCicilanBaru - $returSelesai, 2);
+            if ($sisaBaru <= 0.001) {
+                $nota->update(['flag' => '5']); // Lunas
+            } else {
+                $nota->update(['flag' => '3']); // Proses Cicilan
+            }
+
             $hasil = self::getlistpembayaranbynotrans($nopembayaran);
             $newhutang = self::listhutangx($request->pelanggan_id);
 
             DB::commit();
-            // return new JsonResponse([
-            //     'message' => 'Data Berhasil Disimpan'
-            // ]);
 
             return new JsonResponse([
                 'message' => 'Data Berhasil Disimpan',
@@ -230,13 +299,12 @@ class PembayaranPiutangController extends Controller
                     $q->select('no_penjualan', DB::raw('sum(jumlah) as jumlah'))->groupBy('no_penjualan');
                 },
             'headerRetur' => function ($q) {
-                $q->leftjoin('detail_retur_penjualans', 'detail_retur_penjualans.header_retur_penjualan_id', '=', 'header_retur_penjualans.id')
-                    ->select('header_retur_penjualans.no_penjualan', DB::raw('sum(detail_retur_penjualans.subtotal) as subtotal'))
-                    ->where('status', '!=', '')
-                    ->groupBy('header_retur_penjualans.no_penjualan');
+                $q->select('no_penjualan', DB::raw('sum(total) as total'))
+                    ->where('status', '1')
+                    ->groupBy('no_penjualan');
             },
             ])
-        ->whereIn('flag', ['2', '3', '7'])
+        ->whereIn('flag', ['2', '3', '7', '8'])
         ->where('pelanggan_id', $pelanggan)
         ->orderBy('id', 'desc')
         ->get();
@@ -246,9 +314,9 @@ class PembayaranPiutangController extends Controller
     private static function onlyOutstanding($sales)
     {
         return $sales->filter(function ($sale) {
-            $totalNota = (float) $sale->detail->sum('subtotal');
+            $totalNota = (float) $sale->total;
             $totalTerbayar = (float) $sale->cicilan->sum('jumlah');
-            $totalRetur = (float) ($sale->headerRetur->first()?->subtotal ?? 0);
+            $totalRetur = (float) ($sale->headerRetur->sum('total') ?: 0);
             $sisaPiutang = round($totalNota - $totalRetur - (float) $sale->bayar - $totalTerbayar, 2);
 
             return $sisaPiutang >= 0.01;
@@ -261,6 +329,9 @@ class PembayaranPiutangController extends Controller
         ->where('pembayaran_cicilans.id', $request->id)
         ->select('header_cicilans.tgl_bayar', 'header_cicilans.cara_bayar', 'header_cicilans.keterangan')
         ->first();
+        if (!$cek) {
+            return new JsonResponse(['message' => 'Data cicilan tidak ditemukan.'], 404);
+        }
         $tglsekarang = Carbon::now();
         $tglbayar = Carbon::parse($cek->tgl_bayar);
 
@@ -269,23 +340,50 @@ class PembayaranPiutangController extends Controller
             return new JsonResponse(['message' => 'Maaf Tidak Dapat Menghapus Data,Tanggal Bayar Lebih Dari 7 Hari...!!!'], 500);
         }
         if ($cek->cara_bayar === 'Penagihan Sales' || $cek->cara_bayar=== ''){
-            return new JsonResponse(['message' => 'Maaf Tidak Dapat Menghapus Data...,Karena Tranbsaksi ini melalaui Penagihan Sales...!!!'], 500);
+            return new JsonResponse(['message' => 'Maaf Tidak Dapat Menghapus Data...,Karena Transaksi ini melalui Penagihan Sales...!!!'], 500);
         }
         if($cek->keterangan === null){
-            return new JsonResponse(['message' => 'Maaf Tidak Dapat Menghapus Data...,Karena Tranbsaksi ini melalaui Penagihan Sales...!!!'], 500);
+            return new JsonResponse(['message' => 'Maaf Tidak Dapat Menghapus Data...,Karena Transaksi ini melalui Penagihan Sales...!!!'], 500);
         }
-
-        // return $jumlahhari;
-        //if($cek->tgl_bayar === date('Y-m-d H:i:s')){
 
         $nopembayaran = $request->notrans;
         try {
             DB::beginTransaction();
-                $data = PembayaranCicilan::where('id', request('id'))->delete();
+                $targetCicil = PembayaranCicilan::find($request->id);
+                if (!$targetCicil) {
+                    DB::rollBack();
+                    return new JsonResponse(['message' => 'Data cicilan tidak ditemukan.'], 404);
+                }
+                $noPenjualan = $targetCicil->no_penjualan;
+                $headerCicilanId = $targetCicil->header_ciclan_id;
+
+                $targetCicil->delete();
+
+                // Re-sync HeaderCicilan jumlah
+                $totalHeaderCicilan = (float) PembayaranCicilan::where('header_ciclan_id', $headerCicilanId)->sum('jumlah');
+                HeaderCicilan::where('id', $headerCicilanId)->update(['jumlah' => $totalHeaderCicilan]);
+
+                // Re-calculate flag on HeaderPenjualan
+                $nota = HeaderPenjualan::where('no_penjualan', $noPenjualan)->first();
+                if ($nota) {
+                    $totalCicilanSisa = (float) PembayaranCicilan::where('no_penjualan', $noPenjualan)->sum('jumlah');
+                    $returSelesai = (float) DB::table('header_retur_penjualans')->where('no_penjualan', $noPenjualan)->where('status', '1')->sum('total');
+                    $sisa = round((float) $nota->total - (float) $nota->bayar - $totalCicilanSisa - $returSelesai, 2);
+
+                    if ($sisa <= 0.001) {
+                        $nota->update(['flag' => '5']);
+                    } else if ($totalCicilanSisa > 0) {
+                        $nota->update(['flag' => '3']);
+                    } else {
+                        $flagAwal = ((float) $nota->bayar > 0) ? '7' : '2';
+                        $nota->update(['flag' => $flagAwal]);
+                    }
+                }
+
                 $hasil = self::getlistpembayaranbynotrans($nopembayaran);
             DB::commit();
              return new JsonResponse([
-                'message' => 'Data Berhasil Disimpan',
+                'message' => 'Data Berhasil Dihapus',
                 'data' => $hasil
             ]);
         } catch (\Exception $e) {

@@ -56,6 +56,8 @@ class LaporanPembayaranPiutangController extends Controller
 
             $transaksi = $data->groupBy('no_penjualan')->map(function (Collection $rincian) {
                 $nota = $rincian->first();
+                $sisaPiutang = (float) $nota->sisa_piutang_nota;
+                $isLunas = ($sisaPiutang <= 0.001);
 
                 return [
                     'no_penjualan' => $nota->no_penjualan,
@@ -63,7 +65,11 @@ class LaporanPembayaranPiutangController extends Controller
                     'tgl_hutang' => $nota->tgl_hutang,
                     'total_nota' => (float) $nota->total_nota,
                     'total_dibayar_nota' => (float) $nota->total_dibayar_nota,
-                    'sisa_piutang_nota' => (float) $nota->sisa_piutang_nota,
+                    'total_retur_nota' => (float) ($nota->total_retur_nota ?? 0),
+                    'sisa_piutang_nota' => $sisaPiutang,
+                    'hak_pengembalian' => (float) ($nota->hak_pengembalian ?? 0),
+                    'is_lunas' => $isLunas,
+                    'tgl_lunas' => $isLunas ? $rincian->max('tgl_bayar') : null,
                     'rincian' => $rincian->map(fn ($item) => [
                         'tgl_bayar' => $item->tgl_bayar,
                         'nopembayaran' => $item->nopembayaran,
@@ -133,12 +139,20 @@ class LaporanPembayaranPiutangController extends Controller
             ->selectRaw('pembayaran_per_nota.no_penjualan, SUM(pembayaran_per_nota.jumlah) as total_cicilan_nota')
             ->groupBy('pembayaran_per_nota.no_penjualan');
 
+        $returPerNota = DB::table('header_retur_penjualans as retur_per_nota')
+            ->where('retur_per_nota.status', '1')
+            ->selectRaw('retur_per_nota.no_penjualan, SUM(retur_per_nota.total) as total_retur_nota')
+            ->groupBy('retur_per_nota.no_penjualan');
+
         $pembayaranCicilan = DB::table('pembayaran_cicilans')
             ->leftJoin('header_cicilans', 'header_cicilans.id', '=', 'pembayaran_cicilans.header_ciclan_id')
             ->leftJoin('pelanggans', 'pelanggans.id', '=', 'header_cicilans.pelanggan_id')
             ->leftJoin('header_penjualans', 'header_penjualans.no_penjualan', '=', 'pembayaran_cicilans.no_penjualan')
             ->leftJoinSub($pembayaranPerNota, 'pembayaran_per_nota', function ($join) {
                 $join->on('pembayaran_per_nota.no_penjualan', '=', 'pembayaran_cicilans.no_penjualan');
+            })
+            ->leftJoinSub($returPerNota, 'retur_per_nota', function ($join) {
+                $join->on('retur_per_nota.no_penjualan', '=', 'pembayaran_cicilans.no_penjualan');
             })
             ->select([
                 'pembayaran_cicilans.id',
@@ -153,7 +167,9 @@ class LaporanPembayaranPiutangController extends Controller
                 'header_penjualans.tgl as tgl_hutang',
                 DB::raw('COALESCE(header_penjualans.total, 0) as total_nota'),
                 DB::raw('COALESCE(header_penjualans.bayar, 0) + COALESCE(pembayaran_per_nota.total_cicilan_nota, 0) as total_dibayar_nota'),
-                DB::raw('GREATEST(COALESCE(header_penjualans.total, 0) - COALESCE(header_penjualans.bayar, 0) - COALESCE(pembayaran_per_nota.total_cicilan_nota, 0), 0) as sisa_piutang_nota'),
+                DB::raw('COALESCE(retur_per_nota.total_retur_nota, 0) as total_retur_nota'),
+                DB::raw('GREATEST(COALESCE(header_penjualans.total, 0) - COALESCE(header_penjualans.bayar, 0) - COALESCE(pembayaran_per_nota.total_cicilan_nota, 0) - COALESCE(retur_per_nota.total_retur_nota, 0), 0) as sisa_piutang_nota'),
+                DB::raw('GREATEST(COALESCE(header_penjualans.bayar, 0) + COALESCE(pembayaran_per_nota.total_cicilan_nota, 0) + COALESCE(retur_per_nota.total_retur_nota, 0) - COALESCE(header_penjualans.total, 0), 0) as hak_pengembalian'),
             ]);
 
         $pembayaranAwal = DB::table('header_penjualans')
@@ -161,7 +177,15 @@ class LaporanPembayaranPiutangController extends Controller
             ->leftJoinSub($pembayaranPerNota, 'pembayaran_per_nota', function ($join) {
                 $join->on('pembayaran_per_nota.no_penjualan', '=', 'header_penjualans.no_penjualan');
             })
+            ->leftJoinSub($returPerNota, 'retur_per_nota', function ($join) {
+                $join->on('retur_per_nota.no_penjualan', '=', 'header_penjualans.no_penjualan');
+            })
             ->where('header_penjualans.bayar', '>', 0)
+            ->where(function ($query) {
+                $query->whereIn('header_penjualans.flag', ['2', '3', '4', '7', '8'])
+                    ->orWhereRaw('header_penjualans.bayar < header_penjualans.total');
+            })
+            ->whereNotIn('header_penjualans.flag', ['6'])
             ->select([
                 DB::raw("CONCAT('pembayaran-awal-', header_penjualans.id) as id"),
                 'header_penjualans.no_penjualan',
@@ -175,7 +199,9 @@ class LaporanPembayaranPiutangController extends Controller
                 'header_penjualans.tgl as tgl_hutang',
                 DB::raw('COALESCE(header_penjualans.total, 0) as total_nota'),
                 DB::raw('COALESCE(header_penjualans.bayar, 0) + COALESCE(pembayaran_per_nota.total_cicilan_nota, 0) as total_dibayar_nota'),
-                DB::raw('GREATEST(COALESCE(header_penjualans.total, 0) - COALESCE(header_penjualans.bayar, 0) - COALESCE(pembayaran_per_nota.total_cicilan_nota, 0), 0) as sisa_piutang_nota'),
+                DB::raw('COALESCE(retur_per_nota.total_retur_nota, 0) as total_retur_nota'),
+                DB::raw('GREATEST(COALESCE(header_penjualans.total, 0) - COALESCE(header_penjualans.bayar, 0) - COALESCE(pembayaran_per_nota.total_cicilan_nota, 0) - COALESCE(retur_per_nota.total_retur_nota, 0), 0) as sisa_piutang_nota'),
+                DB::raw('GREATEST(COALESCE(header_penjualans.bayar, 0) + COALESCE(pembayaran_per_nota.total_cicilan_nota, 0) + COALESCE(retur_per_nota.total_retur_nota, 0) - COALESCE(header_penjualans.total, 0), 0) as hak_pengembalian'),
             ]);
 
         $query = DB::query()
