@@ -124,23 +124,108 @@ class PenjualanController extends Controller
     {
         try {
             $validated = $request->validate([
+                'id' => ['nullable', 'integer', 'exists:detail_penjualans,id'],
                 'nota' => ['nullable', 'string', 'max:100'],
                 'kodebarang' => ['required', 'string', 'exists:barangs,kodebarang'],
                 'motif' => ['nullable', 'string', 'max:100'],
-                'jumlah' => ['required', 'numeric', 'gt:0'],
+                'satuan' => ['nullable', 'string', 'in:SB,SK,sb,sk'],
+                'jumlah_b' => ['nullable', 'numeric', 'min:0'],
+                'jumlahB' => ['nullable', 'numeric', 'min:0'],
+                'jumlah_k' => ['nullable', 'numeric', 'min:0'],
+                'jumlahK' => ['nullable', 'numeric', 'min:0'],
+                'jumlah' => ['nullable', 'numeric', 'min:0'],
                 'isi' => ['required', 'numeric', 'gt:0'],
                 'harga_jual' => ['required', 'numeric', 'min:0'],
+                'harga_jual_b' => ['nullable', 'numeric', 'min:0'],
+                'hargaJualB' => ['nullable', 'numeric', 'min:0'],
                 'harga_beli' => ['nullable', 'numeric', 'min:0'],
                 'diskon' => ['nullable', 'numeric', 'min:0'],
                 'pelanggan_id' => ['nullable', 'integer', 'exists:pelanggans,id'],
                 'sales_id' => ['nullable', 'integer', 'exists:users,id'],
             ]);
 
-            if ((float) ($validated['diskon'] ?? 0) > (float) $validated['jumlah'] * (float) $validated['harga_jual']) {
+            $hasJumlahB = $request->has('jumlah_b') || $request->has('jumlahB');
+            $hasJumlahK = $request->has('jumlah_k') || $request->has('jumlahK');
+            $jumB = (float) ($request->input('jumlah_b') ?? $request->input('jumlahB') ?? 0);
+            $jumK = (float) ($request->input('jumlah_k') ?? $request->input('jumlahK') ?? 0);
+
+            if ($jumB > 0 && $jumK > 0) {
                 throw ValidationException::withMessages([
-                    'diskon' => ['Diskon tidak boleh melebihi total harga rincian.'],
+                    'satuan' => ['Pilih salah satu satuan: Jumlah (SB) atau Jumlah (SK), tidak boleh diisi bersamaan.'],
                 ]);
             }
+
+            $isi = (float) $validated['isi'];
+            if ($isi <= 0) {
+                throw ValidationException::withMessages([
+                    'isi' => ['Isi kemasan harus lebih dari 0.'],
+                ]);
+            }
+
+            $satuanParam = strtoupper((string) ($request->input('satuan') ?? ''));
+
+            if ($jumB > 0) {
+                $satuanAktif = 'SB';
+                $jumlahSatuanAktif = $jumB;
+                $jumlahAllSk = round($jumB * $isi, 4);
+                $hargaBInput = (float) ($request->input('harga_jual_b') ?? $request->input('hargaJualB') ?? 0);
+                $hargaSatuanAktif = $hargaBInput > 0 ? $hargaBInput : round((float) $validated['harga_jual'] * $isi, 2);
+                $hargaJualSk = round($hargaSatuanAktif / $isi, 4);
+            } elseif ($jumK > 0) {
+                $satuanAktif = 'SK';
+                $jumlahSatuanAktif = $jumK;
+                $jumlahAllSk = $jumK;
+                $hargaSatuanAktif = (float) $validated['harga_jual'];
+                $hargaJualSk = (float) $validated['harga_jual'];
+            } else {
+                // Fallback untuk payload yang tidak menyertakan jumlah_b atau jumlah_k secara spesifik
+                $fallbackJumlah = (float) ($validated['jumlah'] ?? 0);
+                if ($fallbackJumlah <= 0) {
+                    throw ValidationException::withMessages([
+                        'jumlah' => ['Kuantitas pembelian harus lebih dari 0.'],
+                    ]);
+                }
+
+                if ($satuanParam === 'SB') {
+                    $satuanAktif = 'SB';
+                    if ($fallbackJumlah >= $isi && fmod($fallbackJumlah, $isi) == 0.0) {
+                        $jumlahSatuanAktif = $fallbackJumlah / $isi;
+                        $jumlahAllSk = $fallbackJumlah;
+                    } else {
+                        $jumlahSatuanAktif = $fallbackJumlah;
+                        $jumlahAllSk = round($fallbackJumlah * $isi, 4);
+                    }
+                    $hargaBInput = (float) ($request->input('harga_jual_b') ?? $request->input('hargaJualB') ?? 0);
+                    $hargaSatuanAktif = $hargaBInput > 0 ? $hargaBInput : round((float) $validated['harga_jual'] * $isi, 2);
+                    $hargaJualSk = round($hargaSatuanAktif / $isi, 4);
+                } else {
+                    // Satuan eksplisit SK atau tidak ditentukan (default aman ke SK).
+                    // Jangan menebak SB hanya karena jumlah kelipatan kemasan!
+                    // Pembelian 10 pcs dengan isi kemasan 10 tetap SK.
+                    $satuanAktif = 'SK';
+                    $jumlahSatuanAktif = $fallbackJumlah;
+                    $jumlahAllSk = $fallbackJumlah;
+                    $hargaSatuanAktif = (float) $validated['harga_jual'];
+                    $hargaJualSk = (float) $validated['harga_jual'];
+                }
+            }
+
+            $diskonPerSatuan = (float) ($validated['diskon'] ?? 0);
+
+            if ($diskonPerSatuan < 0) {
+                throw ValidationException::withMessages([
+                    'diskon' => ['Diskon tidak boleh kurang dari 0.'],
+                ]);
+            }
+
+            if ($hargaSatuanAktif > 0 && $diskonPerSatuan > $hargaSatuanAktif) {
+                throw ValidationException::withMessages([
+                    'diskon' => ['Diskon per satuan tidak boleh melebihi harga satuan.'],
+                ]);
+            }
+
+            $totalDiskon = round($jumlahSatuanAktif * $diskonPerSatuan, 2);
+            $subtotal = max(0.0, round(($jumlahSatuanAktif * $hargaSatuanAktif) - $totalDiskon, 2));
 
             DB::beginTransaction();
             $headerTersimpan = null;
@@ -156,22 +241,32 @@ class PenjualanController extends Controller
                     ]);
                 }
             }
-            $subtotal = ((float) $validated['jumlah'] * (float) $validated['harga_jual']) - (float) ($validated['diskon'] ?? 0);
-            $detail = DetailPenjualan::updateOrCreate(
-                [
-                    'no_penjualan' => $nota,
-                    'kodebarang' => $validated['kodebarang'],
-                    'motif' => $validated['motif'] ?? null,
-                    'jumlah' => $validated['jumlah'],
-                    'isi' => $validated['isi'],
-                ],
-                [
-                    'harga_jual' => $validated['harga_jual'],
-                    'harga_beli' => $validated['harga_beli'] ?? 0,
-                    'diskon' => $validated['diskon'] ?? 0,
-                    'subtotal' => $subtotal
-                ]
-            );
+
+            $matchAttributes = [
+                'no_penjualan' => $nota,
+                'kodebarang' => $validated['kodebarang'],
+                'motif' => $validated['motif'] ?? null,
+                'jumlah' => $jumlahAllSk,
+                'isi' => $isi,
+            ];
+            $updateAttributes = [
+                'harga_jual' => $hargaJualSk,
+                'harga_beli' => $validated['harga_beli'] ?? 0,
+                'diskon' => $totalDiskon,
+                'subtotal' => $subtotal,
+            ];
+
+            if ($request->filled('id')) {
+                $detail = DetailPenjualan::where('id', $request->id)
+                    ->where('no_penjualan', $nota)
+                    ->first();
+                if ($detail) {
+                    $detail->update(array_merge($matchAttributes, $updateAttributes));
+                }
+            }
+            if (!isset($detail) || !$detail) {
+                $detail = DetailPenjualan::updateOrCreate($matchAttributes, $updateAttributes);
+            }
             if (!$detail) {
                 throw new Exception("Detail Tidak Tersimpan", 1);
             }
@@ -511,6 +606,8 @@ class PenjualanController extends Controller
                 'flag' => ['required', 'in:2,5,7,8'],
                 'cara_bayar' => ['nullable', 'in:cash,transfer,'],
                 'bayar' => ['required', 'numeric', 'min:0'],
+                'diskon_kuitansi' => ['nullable', 'numeric', 'min:0'],
+                'kena_ppn' => ['nullable', 'boolean'],
                 'dataPelanggan' => ['nullable', 'array'],
                 'dataPelanggan.nama' => ['nullable', 'string', 'max:100'],
                 'dataPelanggan.tlp' => ['nullable', 'string', 'max:50'],
@@ -551,8 +648,39 @@ class PenjualanController extends Controller
                 ]);
             }
 
+            $subtotalBarang = (float) DetailPenjualan::where('no_penjualan', $data->no_penjualan)->sum('subtotal');
+            $diskonNota = isset($validated['diskon_kuitansi']) ? (float) $validated['diskon_kuitansi'] : (float) ($data->diskon_kuitansi ?? 0);
+
+            if ($diskonNota < 0) {
+                throw ValidationException::withMessages([
+                    'diskon_kuitansi' => ['Diskon nota tidak boleh kurang dari 0.'],
+                ]);
+            }
+
+            if ($diskonNota > $subtotalBarang) {
+                throw ValidationException::withMessages([
+                    'diskon_kuitansi' => ['Diskon nota tidak boleh lebih besar dari subtotal barang.'],
+                ]);
+            }
+
+            $dpp = max(0.0, round($subtotalBarang - $diskonNota, 2));
+
+            $kenaPpn = $request->has('kena_ppn')
+                ? filter_var($request->input('kena_ppn'), FILTER_VALIDATE_BOOLEAN)
+                : ((float) $data->ppn_persen > 0 || PpnHelper::tarifAktif() > 0);
+
+            if ($kenaPpn) {
+                $ppnPersen = (float) ($data->ppn_persen > 0 ? $data->ppn_persen : PpnHelper::tarifAktif());
+            } else {
+                $ppnPersen = 0.0;
+            }
+
+            $nilaiPenjualan = PpnHelper::hitung($dpp, $ppnPersen);
+            $ppnNominal = $nilaiPenjualan['ppn_nominal'];
+            $total = $nilaiPenjualan['total'];
+            $totalDiskonDetail = (float) DetailPenjualan::where('no_penjualan', $data->no_penjualan)->sum('diskon');
+
             $bayar = (float) $validated['bayar'];
-            $total = (float) $data->total;
             $flag = (string) $validated['flag'];
 
             if ($data->noorder) {
@@ -614,9 +742,15 @@ class PenjualanController extends Controller
                 ]);
             }
 
-            if (in_array($flag, ['7', '8'], true) && ($bayar <= 0 || $bayar >= $total)) {
+            if (in_array($flag, ['7', '8'], true) && ($bayar < 0 || ($total > 0 && $bayar >= $total))) {
                 throw ValidationException::withMessages([
-                    'bayar' => ['Nominal down payment harus lebih dari nol dan kurang dari total penjualan.'],
+                    'bayar' => ['Nominal down payment harus kurang dari total penjualan.'],
+                ]);
+            }
+
+            if ($flag === '2' && $bayar != 0.0) {
+                throw ValidationException::withMessages([
+                    'bayar' => ['Pembayaran tempo tidak menerima pembayaran awal.'],
                 ]);
             }
 
@@ -626,9 +760,15 @@ class PenjualanController extends Controller
                 ]);
             }
 
-            $kembali = $flag === '5' ? max(0, $bayar - $total) : 0;
+            $kembali = $flag === '5' ? max(0.0, round($bayar - $total, 2)) : 0.0;
             $data->update([
                 'pelanggan_id' => $order ? $order->pelanggan_id : ($validated['pelanggan_id'] ?? null),
+                'subtotal' => $dpp,
+                'diskon_kuitansi' => $diskonNota,
+                'total_diskon' => $totalDiskonDetail,
+                'ppn_persen' => $ppnPersen,
+                'ppn_nominal' => $ppnNominal,
+                'total' => $total,
                 'bayar' => $bayar,
                 'kembali' => $kembali,
                 'flag' => $flag,
