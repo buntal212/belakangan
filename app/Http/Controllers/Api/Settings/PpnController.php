@@ -11,8 +11,6 @@ class PpnController extends Controller
 {
     public function show(Request $request): JsonResponse
     {
-        $this->pastikanAdmin($request);
-
         return response()->json([
             'result' => PengaturanPpn::first() ?? new PengaturanPpn([
                 'aktif' => false,

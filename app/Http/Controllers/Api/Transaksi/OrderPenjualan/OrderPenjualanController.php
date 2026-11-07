@@ -258,7 +258,6 @@ class OrderPenjualanController extends Controller
 			]);
 		}
 
-		$nilaiPenjualan = PpnHelper::hitung((float) $order->total_harga, PpnHelper::tarifAktif());
 		$penjualan->fill([
 			'noorder' => $order->noorder,
 			// Tanggal penjualan mengikuti saat draft disetujui menjadi transaksi,
@@ -266,7 +265,10 @@ class OrderPenjualanController extends Controller
 			'tgl' => Carbon::now(),
 			'pelanggan_id' => $order->pelanggan_id,
 			'sales_id' => $order->sales_id,
-			...$nilaiPenjualan,
+			'subtotal' => (float) $order->total_harga,
+			'ppn_persen' => 0,
+			'ppn_nominal' => 0,
+			'total' => (float) $order->total_harga,
 			'total_diskon' => max(0, $totalSebelumDiskon - (float) $order->total_harga),
 			'bayar' => 0,
 			'kembali' => 0,

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\v4\Sales;
 
+use App\Helpers\StokHelper;
 use App\Http\Controllers\Controller;
 use App\Models\Barang;
 use App\Models\OrderPenjualan;
@@ -124,24 +125,14 @@ class PengorderanController extends Controller
                         ->firstOrFail();
 
                     $jumlah = (int) $item['jumlah'];
-                    $stokFisik = (int) DB::table('stoks')
-                        ->where('kdbarang', $barang->kodebarang)
-                        ->lockForUpdate()
-                        ->get(['jumlah_k'])
-                        ->sum('jumlah_k');
-                    $stokAlokasi = (int) DB::table('rincian_order_penjualans as rincian')
-                        ->join('order_penjualans as order_penjualan', 'order_penjualan.id', '=', 'rincian.order_penjualan_id')
-                        ->where('rincian.barang_id', $barang->id)
-                        ->whereIn('order_penjualan.status_order', ['1', '2', '3', '4'])
-						->whereNotExists(function ($query) {
-							$query->select(DB::raw(1))
-								->from('header_penjualans as penjualan')
-								->whereColumn('penjualan.noorder', 'order_penjualan.noorder')
-								->whereNotNull('penjualan.flag')
-								->where('penjualan.flag', '<>', '6');
-						})
-                        ->sum('rincian.jumlah');
-                    $stokBebas = max(0, $stokFisik - $stokAlokasi);
+                    $ketersediaan = StokHelper::getKetersediaanStok(
+                        kodebarang: $barang->kodebarang,
+                        motif: null,
+                        excludeNoPenjualan: null,
+                        excludeNoOrder: null,
+                        lock: true
+                    );
+                    $stokBebas = (int) $ketersediaan['stok_tersedia_global'];
 
                     if ($jumlah > $stokBebas) {
                         throw ValidationException::withMessages([

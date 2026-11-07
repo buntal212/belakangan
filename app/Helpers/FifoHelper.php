@@ -27,6 +27,64 @@ class FifoHelper
             throw new Exception("Transaction {$noTransaksi} not found or has no details");
         }
 
+        // 0. Validasi ketersediaan stok terpusat (termasuk alokasi order sales & draft kasir mandiri pesaing)
+        StokHelper::validateKetersediaanPembayaran($noTransaksi);
+
+        // 1. Validasi ketersediaan stok untuk seluruh rincian transaksi sebelum proses pengurangan
+        $kebutuhanPerBarang = [];
+        foreach ($details as $detail) {
+            $key = $detail->kodebarang . '|' . ($detail->motif ?? '');
+            if (!isset($kebutuhanPerBarang[$key])) {
+                $kebutuhanPerBarang[$key] = [
+                    'kodebarang' => $detail->kodebarang,
+                    'motif' => $detail->motif,
+                    'total_jumlah' => 0.0,
+                ];
+            }
+            $kebutuhanPerBarang[$key]['total_jumlah'] += (float) $detail->jumlah;
+        }
+
+        foreach ($kebutuhanPerBarang as $kebutuhan) {
+            $kodeBarang = $kebutuhan['kodebarang'];
+            $motif = $kebutuhan['motif'];
+            $totalJumlah = $kebutuhan['total_jumlah'];
+
+            $queryStok = stok::where('kdbarang', $kodeBarang)
+                ->where('jumlah_k', '>', 0);
+
+            if ($motif !== null && $motif !== '') {
+                $queryStok->where('motif', $motif);
+            }
+
+            $stoks = $queryStok
+                ->lockForUpdate()
+                ->orderBy('created_at', 'asc')
+                ->get();
+
+            $available = (float) $stoks->sum('jumlah_k');
+            if ($available < $totalJumlah) {
+                $barang = Barang::where('kodebarang', $kodeBarang)->first();
+                $namaBarang = $barang ? $barang->namabarang : $kodeBarang;
+                $satuanK = $barang ? $barang->satuan_k : 'PCS';
+                $isi = (int) ($barang?->isi ?? 1);
+                $satuanB = $barang ? $barang->satuan_b : 'DUS';
+
+                $infoTersedia = "{$available} {$satuanK}";
+                $infoDiminta = "{$totalJumlah} {$satuanK}";
+                if ($isi > 1 && $satuanB) {
+                    $dusTersedia = floor($available / $isi);
+                    $sisaPcsTersedia = (int) $available % $isi;
+                    $infoTersedia .= " ({$dusTersedia} {$satuanB}" . ($sisaPcsTersedia > 0 ? " {$sisaPcsTersedia} {$satuanK}" : '') . ")";
+
+                    $dusDiminta = floor($totalJumlah / $isi);
+                    $sisaPcsDiminta = (int) $totalJumlah % $isi;
+                    $infoDiminta .= " ({$dusDiminta} {$satuanB}" . ($sisaPcsDiminta > 0 ? " {$sisaPcsDiminta} {$satuanK}" : '') . ")";
+                }
+
+                throw new Exception("Stok tidak mencukupi untuk barang {$namaBarang} ({$kodeBarang}). Tersedia: {$infoTersedia}, dibutuhkan: {$infoDiminta}.");
+            }
+        }
+
         $allFifoBatch = [];
 
         foreach ($details as $detail) {
@@ -51,9 +109,11 @@ class FifoHelper
                 ->orderBy('created_at', 'asc')
                 ->get();
             // reject if stock is less than available
-            $available = $stoks->sum('jumlah_k');
-            if ((float)$available < (float)$jumlah) {
-                throw new Exception('Stok tidak mencukupi untuk barang ' . $kodeBarang);
+            $available = (float) $stoks->sum('jumlah_k');
+            if ($available < (float)$jumlah) {
+                $barang = Barang::where('kodebarang', $kodeBarang)->first();
+                $namaBarang = $barang ? $barang->namabarang : $kodeBarang;
+                throw new Exception("Stok tidak mencukupi untuk barang {$namaBarang} ({$kodeBarang}).");
             }
 
             // Get latest purchase price even if stock is empty

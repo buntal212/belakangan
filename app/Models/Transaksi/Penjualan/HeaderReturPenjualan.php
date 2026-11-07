@@ -43,4 +43,9 @@ class HeaderReturPenjualan extends Model
     {
         return $this->hasMany(DetailReturPenjualan::class);
     }
+
+    public function headerPenjualan()
+    {
+        return $this->belongsTo(HeaderPenjualan::class, 'no_penjualan', 'no_penjualan');
+    }
 }

@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers\Api\Transaksi\Penjualan;
 
+use App\Helpers\FifoHelper;
 use App\Helpers\FormatingHelper;
 use App\Helpers\PpnHelper;
+use App\Helpers\StokHelper;
 use App\Http\Controllers\Controller;
 use App\Models\Barang;
 use App\Models\KeteranganPelanggan;
@@ -12,7 +14,6 @@ use App\Models\Pelanggan;
 use App\Models\Stok\stok;
 use App\Models\Transaksi\Penjualan\DetailPenjualan;
 use App\Models\Transaksi\Penjualan\DetailPenjualanFifo;
-use App\Helpers\FifoHelper;
 use App\Models\Transaksi\Penjualan\HeaderPenjualan;
 use App\Models\User;
 use Exception;
@@ -25,31 +26,62 @@ class PenjualanController extends Controller
 {
     public function getBarangByStok()
     {
-        $kodebarang = Barang::select(
-            'kodebarang',
-        )
-            ->whereNull('flaging')
-            ->where(function ($x) {
-                $x->where('namabarang', 'like', '%' . request('q') . '%')
-                    ->orWhere('kodebarang', 'like', '%' . request('q') . '%');
-            })
+        $search = request('q');
+        $queryBarang = Barang::select('kodebarang')
+            ->whereNull('flaging');
 
-            ->limit(request('limit'))
-            ->pluck('kodebarang')->toArray();
-        $data = stok::select(
-            'kdbarang',
-            DB::raw('sum(jumlah_k) as jumlah_k'),
-            'harga_beli_k',
-            'isi',
-            'motif',
-            'satuan_k',
-            'satuan_b',
-        )
-            ->whereIn('kdbarang', $kodebarang)
-            ->where('jumlah_k', '>', 0)
-            ->with('barang:kodebarang,namabarang,ukuran,hargajual1,hargajual2,id')
-            ->groupBy('kdbarang', 'motif')
+        if (!empty($search)) {
+            $queryBarang->where(function ($x) use ($search) {
+                $x->where('namabarang', 'like', '%' . $search . '%')
+                    ->orWhere('kodebarang', 'like', '%' . $search . '%')
+                    ->orWhereHas('stoks', function ($qStok) use ($search) {
+                        $qStok->where('motif', 'like', '%' . $search . '%');
+                    });
+            });
+        }
+
+        if (request()->filled('limit')) {
+            $queryBarang->limit((int) request('limit'));
+        }
+
+        $kodebarang = $queryBarang->pluck('kodebarang')->toArray();
+
+        $data = stok::query()
+            ->join('barangs', 'stoks.kdbarang', '=', 'barangs.kodebarang')
+            ->whereIn('stoks.kdbarang', $kodebarang)
+            ->where('stoks.jumlah_k', '>', 0)
+            ->select(
+                'stoks.kdbarang',
+                'stoks.motif',
+                DB::raw('SUM(stoks.jumlah_k) as jumlah_k'),
+                DB::raw('MAX(stoks.harga_beli_k) as harga_beli_k'),
+                'barangs.isi',
+                'barangs.satuan_b',
+                'barangs.satuan_k'
+            )
+            ->groupBy('stoks.kdbarang', 'stoks.motif', 'barangs.isi', 'barangs.satuan_b', 'barangs.satuan_k')
+            ->with('barang:kodebarang,namabarang,ukuran,hargajual1,hargajual2,id,satuan_b,satuan_k,isi')
             ->get();
+
+        $data->transform(function ($item) {
+            $isi = (int) ($item->isi > 0 ? $item->isi : 1);
+            $satuanB = $item->satuan_b ?: 'DUS';
+            $satuanK = $item->satuan_k ?: 'PCS';
+
+            $ketersediaan = StokHelper::getKetersediaanStok($item->kdbarang, $item->motif);
+            $stokTersedia = (float) $ketersediaan['stok_tersedia'];
+
+            $item->stok_fisik = (float) $item->jumlah_k;
+            $item->stok_alokasi = (float) $ketersediaan['total_alokasi'];
+            $item->stok_tersedia = $stokTersedia;
+            $item->jumlah_k = $stokTersedia;
+
+            $item->stok_display = StokHelper::formatStokDisplay($stokTersedia, $isi, $satuanB, $satuanK);
+
+            return $item;
+        });
+
+        $data = $data->filter(fn ($item) => (float) $item->stok_tersedia > 0)->values();
 
         return new JsonResponse($data);
     }
@@ -230,17 +262,56 @@ class PenjualanController extends Controller
             DB::beginTransaction();
             $headerTersimpan = null;
             if (empty($validated['nota'])) {
-                $nota = FormatingHelper::nomorNotaPenjualanBerikutnya();
+                if ($request->filled('id')) {
+                    $detailExisting = DetailPenjualan::whereKey($request->id)->first();
+                    if ($detailExisting) {
+                        $nota = $detailExisting->no_penjualan;
+                        $headerTersimpan = HeaderPenjualan::where('no_penjualan', $nota)->lockForUpdate()->first();
+                    }
+                }
+
+                if (empty($nota)) {
+                    $nota = FormatingHelper::nomorNotaPenjualanBerikutnya();
+                }
             } else {
                 $nota = $validated['nota'];
                 $headerTersimpan = HeaderPenjualan::where('no_penjualan', $nota)->lockForUpdate()->first();
 
-                if ($headerTersimpan?->noorder) {
+                if (!$headerTersimpan) {
+                    throw ValidationException::withMessages([
+                        'nota' => ['Nota penjualan tidak ditemukan.'],
+                    ]);
+                }
+            }
+
+            if ($headerTersimpan) {
+                if ($headerTersimpan->noorder) {
                     throw ValidationException::withMessages([
                         'nota' => ['Rincian penjualan dari order sales tidak dapat diubah.'],
                     ]);
                 }
+
+                if ($headerTersimpan->flag === '6') {
+                    throw ValidationException::withMessages([
+                        'nota' => ['Penjualan yang dibatalkan tidak dapat diubah.'],
+                    ]);
+                }
+
+                if ($headerTersimpan->flag !== null) {
+                    throw ValidationException::withMessages([
+                        'nota' => ['Rincian hanya dapat diubah pada penjualan draf.'],
+                    ]);
+                }
             }
+
+            // Validasi ketersediaan stok terpusat
+            StokHelper::validateKetersediaanDraft(
+                kodebarang: $validated['kodebarang'],
+                motif: $validated['motif'] ?? null,
+                jumlahDimintaSk: $jumlahAllSk,
+                noPenjualan: $nota,
+                detailId: $request->filled('id') ? (int) $request->id : null
+            );
 
             $matchAttributes = [
                 'no_penjualan' => $nota,
@@ -272,17 +343,18 @@ class PenjualanController extends Controller
             }
             $subtotalPenjualan = (float) DetailPenjualan::where('no_penjualan', '=', $nota)->sum('subtotal');
             $totalDiskon = DetailPenjualan::where('no_penjualan', '=', $nota)->sum('diskon');
-            $ppnPersen = $headerTersimpan ? (float) $headerTersimpan->ppn_persen : PpnHelper::tarifAktif();
-            $nilaiPenjualan = PpnHelper::hitung($subtotalPenjualan, $ppnPersen);
             $data = HeaderPenjualan::updateOrCreate(
                 [
                     'no_penjualan' => $nota,
                 ],
                 [
                     'tgl' => date('Y-m-d H:i:s'),
-                    'sales_id' => $validated['sales_id'] ?? null,
-                    'pelanggan_id' => $validated['pelanggan_id'] ?? null,
-                    ...$nilaiPenjualan,
+                    'sales_id' => $validated['sales_id'] ?? $headerTersimpan?->sales_id,
+                    'pelanggan_id' => $validated['pelanggan_id'] ?? $headerTersimpan?->pelanggan_id,
+                    'subtotal' => $subtotalPenjualan,
+                    'ppn_persen' => 0,
+                    'ppn_nominal' => 0,
+                    'total' => $subtotalPenjualan,
                     'total_diskon' => $totalDiskon,
                 ]
             );
@@ -323,7 +395,7 @@ class PenjualanController extends Controller
                 'header' => $header,
                 'nota' => $nota,
                 // 'data' => $data,
-                'total' => $nilaiPenjualan['total'],
+                'total' => $subtotalPenjualan,
             ]);
         } catch (ValidationException $exception) {
             DB::rollBack();
@@ -391,7 +463,8 @@ class PenjualanController extends Controller
             },
             'sales',
             'keterangan',
-            'headerRetur.detail',
+            'headerRetur.detail.masterBarang',
+            'headerRetur.detail.detailPenjualan',
             'orderSumber:noorder,sistem_bayar,cara_bayar,down_payment,total_harga,status_pembayaran',
             // 'detailRetur' => function ($q) {
             //     $q->select(
@@ -521,9 +594,11 @@ class PenjualanController extends Controller
             }
 
             $subtotalPenjualan = (float) DetailPenjualan::where('no_penjualan', $header->no_penjualan)->sum('subtotal');
-            $nilaiPenjualan = PpnHelper::hitung($subtotalPenjualan, (float) $header->ppn_persen);
             $header->update([
-                ...$nilaiPenjualan,
+                'subtotal' => $subtotalPenjualan,
+                'ppn_persen' => 0,
+                'ppn_nominal' => 0,
+                'total' => $subtotalPenjualan,
                 'total_diskon' => DetailPenjualan::where('no_penjualan', $header->no_penjualan)->sum('diskon'),
             ]);
 
@@ -796,10 +871,15 @@ class PenjualanController extends Controller
             $detaiPengurangan = [];
             try {
                 if (!DetailPenjualanFifo::where('no_penjualan', $validated['no_penjualan'])->exists()) {
+                    StokHelper::validateKetersediaanPembayaran($validated['no_penjualan']);
                     $detaiPengurangan = FifoHelper::processFifo($validated['no_penjualan']);
                 }
+            } catch (ValidationException $ve) {
+                throw $ve;
             } catch (\Exception $e) {
-                throw new \Exception("Error memproses FIFO: " . $e->getMessage());
+                throw ValidationException::withMessages([
+                    'stok' => [$e->getMessage()],
+                ]);
             }
 
             $bonus = self::setBonus($validated['no_penjualan'], $flag);

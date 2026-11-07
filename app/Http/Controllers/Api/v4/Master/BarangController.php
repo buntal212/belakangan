@@ -13,7 +13,7 @@ class BarangController extends Controller
     {
         $alokasiOrder = DB::table('rincian_order_penjualans as rincian')
             ->join('order_penjualans as order_penjualan', 'order_penjualan.id', '=', 'rincian.order_penjualan_id')
-            ->whereIn('order_penjualan.status_order', ['1', '2', '3', '4'])
+            ->whereIn('order_penjualan.status_order', ['1', '2', '3'])
             ->whereNotExists(function ($query) {
                 $query->select(DB::raw(1))
                     ->from('header_penjualans as penjualan')
@@ -21,12 +21,23 @@ class BarangController extends Controller
                     ->whereNotNull('penjualan.flag')
                     ->where('penjualan.flag', '<>', '6');
             })
-            ->select('rincian.barang_id', DB::raw('SUM(rincian.jumlah) AS stok_alokasi'))
-            ->groupBy('rincian.barang_id');
+            ->select('rincian.barang_id', 'rincian.jumlah')
+            ->unionAll(
+                DB::table('detail_penjualans as dp')
+                    ->join('header_penjualans as hp', 'dp.no_penjualan', '=', 'hp.no_penjualan')
+                    ->join('barangs as b', 'dp.kodebarang', '=', 'b.kodebarang')
+                    ->whereNull('hp.flag')
+                    ->whereNull('hp.noorder')
+                    ->select('b.id as barang_id', 'dp.jumlah')
+            );
+
+        $alokasiTotal = DB::table($alokasiOrder, 'alokasi_gabungan')
+            ->select('barang_id', DB::raw('SUM(jumlah) AS stok_alokasi'))
+            ->groupBy('barang_id');
 
         $query = Barang::query()
             ->leftJoin('stoks', 'stoks.kdbarang', '=', 'barangs.kodebarang')
-            ->leftJoinSub($alokasiOrder, 'alokasi_order', function ($join) {
+            ->leftJoinSub($alokasiTotal, 'alokasi_order', function ($join) {
                 $join->on('alokasi_order.barang_id', '=', 'barangs.id');
             })
             ->leftJoin('imagebarangs', function ($join) {

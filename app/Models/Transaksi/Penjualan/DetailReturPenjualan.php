@@ -15,4 +15,14 @@ class DetailReturPenjualan extends Model
     {
         return $this->belongsTo(Barang::class, 'kodebarang', 'kodebarang');
     }
+
+    public function headerRetur()
+    {
+        return $this->belongsTo(HeaderReturPenjualan::class, 'header_retur_penjualan_id');
+    }
+
+    public function detailPenjualan()
+    {
+        return $this->belongsTo(DetailPenjualan::class, 'detail_penjualan_id');
+    }
 }
