@@ -19,6 +19,7 @@ class LaporanBarangKeluarController extends Controller
             'tglawal' => ['nullable', 'date'],
             'tglakhir' => ['nullable', 'date', 'after_or_equal:tglawal'],
             'q' => ['nullable', 'string', 'max:100'],
+            // Parameter API lama bernama merk, sedangkan kolom barangnya brand.
             'merk' => ['nullable', 'string', 'max:100'],
         ]);
 
@@ -38,7 +39,7 @@ class LaporanBarangKeluarController extends Controller
                 $akhir . ' 23:59:59',
             ])
             ->when($filter['merk'] ?? null, function ($query, $merk) {
-                $query->where('barang.merk', $merk);
+                $query->where('barang.brand', $merk);
             })
             ->when($filter['q'] ?? null, function ($query, $kataKunci) {
                 $query->where(function ($subQuery) use ($kataKunci) {
@@ -53,7 +54,7 @@ class LaporanBarangKeluarController extends Controller
                 'fifo.no_penjualan',
                 'fifo.kodebarang',
                 'barang.namabarang',
-                DB::raw("COALESCE(barang.merk, '-') as merk"),
+                DB::raw("COALESCE(barang.brand, '-') as merk"),
                 DB::raw("COALESCE(stok.motif, '-') as motif"),
                 DB::raw('COALESCE(barang.isi, 1) as isi'),
                 DB::raw("COALESCE(barang.satuan_b, 'DUS') as satuan_b"),
@@ -67,7 +68,7 @@ class LaporanBarangKeluarController extends Controller
                 'fifo.no_penjualan',
                 'fifo.kodebarang',
                 'barang.namabarang',
-                'barang.merk',
+                'barang.brand',
                 'stok.motif',
                 'barang.isi',
                 'barang.satuan_b',
