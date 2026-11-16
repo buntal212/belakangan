@@ -14,22 +14,25 @@ class PpnHelper
     }
 
     /**
-     * Total penjualan disimpan termasuk PPN. Tarif dan nominal juga dibekukan
+     * Total penjualan sudah termasuk PPN. Tarif dan nominal juga dibekukan
      * di header agar perubahan pengaturan tidak mengubah nota lama.
      *
-     * @return array{subtotal: float, ppn_persen: float, ppn_nominal: float, total: float}
+     * @return array{dpp: float, ppn_persen: float, ppn_nominal: float, total: float}
      */
-    public static function hitung(float $subtotal, float $persen): array
+    public static function hitungTermasukPpn(float $total, float $persen): array
     {
-        $subtotal = max(0, round($subtotal, 2));
+        $total = max(0, round($total, 2));
         $persen = max(0, round($persen, 2));
-        $ppnNominal = round($subtotal * $persen / 100, 2);
+        $dpp = $persen > 0
+            ? round($total / (1 + ($persen / 100)), 2)
+            : $total;
+        $ppnNominal = round($total - $dpp, 2);
 
         return [
-            'subtotal' => $subtotal,
+            'dpp' => $dpp,
             'ppn_persen' => $persen,
             'ppn_nominal' => $ppnNominal,
-            'total' => $subtotal + $ppnNominal,
+            'total' => $total,
         ];
     }
 }

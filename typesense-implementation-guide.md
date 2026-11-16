@@ -1,6 +1,7 @@
 # Panduan Implementasi Typesense untuk Laravel
 
 ## Daftar Isi
+
 - [Instalasi Typesense Server](#instalasi-typesense-server)
 - [Instalasi Laravel Scout dengan Typesense](#instalasi-laravel-scout-dengan-typesense)
 - [Konfigurasi Laravel](#konfigurasi-laravel)
@@ -153,9 +154,9 @@ use Laravel\Scout\Searchable;
 class Barang extends Model
 {
     use HasFactory, Searchable;
-    
+
     protected $guarded = ['id'];
-    
+
     /**
      * Get the indexable data array for the model.
      *
@@ -174,7 +175,7 @@ class Barang extends Model
             'created_at' => $this->created_at->timestamp,
         ];
     }
-    
+
     /**
      * Get the name of the index associated with the model.
      *
@@ -184,7 +185,7 @@ class Barang extends Model
     {
         return 'barang_index';
     }
-    
+
     /**
      * Define Typesense schema for this model
      */
@@ -253,7 +254,7 @@ class CreateTypesenseSchema extends Command
     public function handle()
     {
         $this->info('Creating Typesense schema...');
-        
+
         // Hapus collection jika sudah ada
         try {
             Typesense::client()->collections['barang_index']->delete();
@@ -261,7 +262,7 @@ class CreateTypesenseSchema extends Command
         } catch (\Exception $e) {
             $this->info('No existing collection found or error: ' . $e->getMessage());
         }
-        
+
         // Buat schema baru
         try {
             $schema = Barang::typesenseSchema();
@@ -271,7 +272,7 @@ class CreateTypesenseSchema extends Command
             $this->error('Failed to create schema: ' . $e->getMessage());
             return 1;
         }
-        
+
         return 0;
     }
 }
@@ -308,7 +309,7 @@ class SearchController extends Controller
         $query = $request->input('q', '');
         $perPage = $request->input('per_page', 15);
         $page = $request->input('page', 1);
-        
+
         $searchParams = [
             'q' => $query,
             'query_by' => 'namabarang, kodebarang',
@@ -316,34 +317,34 @@ class SearchController extends Controller
             'per_page' => $perPage,
             'page' => $page,
         ];
-        
+
         // Filter berdasarkan kategori jika ada
         if ($request->has('kategori_id')) {
             $searchParams['filter_by'] = 'kategori_id:=' . $request->input('kategori_id');
         }
-        
+
         // Filter berdasarkan brand jika ada
         if ($request->has('brand_id')) {
-            $filterBy = isset($searchParams['filter_by']) 
+            $filterBy = isset($searchParams['filter_by'])
                 ? $searchParams['filter_by'] . ' && brand_id:=' . $request->input('brand_id')
                 : 'brand_id:=' . $request->input('brand_id');
-            
+
             $searchParams['filter_by'] = $filterBy;
         }
-        
+
         // Filter berdasarkan range harga
         if ($request->has('min_price') && $request->has('max_price')) {
-            $filterBy = isset($searchParams['filter_by']) 
+            $filterBy = isset($searchParams['filter_by'])
                 ? $searchParams['filter_by'] . ' && harga:>=' . $request->input('min_price') . ' && harga:<=' . $request->input('max_price')
                 : 'harga:>=' . $request->input('min_price') . ' && harga:<=' . $request->input('max_price');
-            
+
             $searchParams['filter_by'] = $filterBy;
         }
-        
+
         $results = Barang::search($query, function ($typesense, $query, $options) use ($searchParams) {
             return $typesense->search($searchParams);
         });
-        
+
         return new JsonResponse([
             'data' => $results->items(),
             'meta' => [
@@ -377,17 +378,14 @@ npm install typesense-instantsearch-adapter instantsearch.js vue-instantsearch
 ```vue
 <template>
   <div class="search-container">
-    <ais-instant-search
-      :search-client="searchClient"
-      index-name="barang_index"
-    >
+    <ais-instant-search :search-client="searchClient" index-name="barang_index">
       <ais-search-box placeholder="Cari barang..." />
-      
+
       <div class="search-filters">
         <ais-refinement-list attribute="kategori_id" />
         <ais-range-input attribute="harga" />
       </div>
-      
+
       <ais-hits>
         <template v-slot:item="{ item }">
           <div class="search-item">
@@ -398,14 +396,14 @@ npm install typesense-instantsearch-adapter instantsearch.js vue-instantsearch
           </div>
         </template>
       </ais-hits>
-      
+
       <ais-pagination />
     </ais-instant-search>
   </div>
 </template>
 
 <script>
-import { TypesenseInstantsearchAdapter } from 'typesense-instantsearch-adapter';
+import { TypesenseInstantsearchAdapter } from 'typesense-instantsearch-adapter'
 import {
   AisInstantSearch,
   AisSearchBox,
@@ -413,7 +411,7 @@ import {
   AisRefinementList,
   AisRangeInput,
   AisPagination
-} from 'vue-instantsearch';
+} from 'vue-instantsearch'
 
 export default {
   components: {
@@ -427,7 +425,7 @@ export default {
   data() {
     return {
       searchClient: null
-    };
+    }
   },
   created() {
     const typesenseInstantsearchAdapter = new TypesenseInstantsearchAdapter({
@@ -444,11 +442,11 @@ export default {
       additionalSearchParameters: {
         query_by: 'namabarang, kodebarang'
       }
-    });
-    
-    this.searchClient = typesenseInstantsearchAdapter.searchClient;
+    })
+
+    this.searchClient = typesenseInstantsearchAdapter.searchClient
   }
-};
+}
 </script>
 
 <style>
@@ -507,18 +505,18 @@ class CreateTypesenseApiKey extends Command
     public function handle()
     {
         $description = $this->argument('description');
-        
+
         try {
             $response = Typesense::client()->keys->create([
                 'description' => $description,
                 'actions' => ['documents:search'],
                 'collections' => ['barang_index'],
             ]);
-            
+
             $this->info('API Key created successfully!');
             $this->info('Key: ' . $response['value']);
             $this->warn('Save this key, it will not be shown again!');
-            
+
             return 0;
         } catch (\Exception $e) {
             $this->error('Failed to create API key: ' . $e->getMessage());
@@ -677,7 +675,7 @@ Jika Anda menggunakan Laravel Horizon untuk mengelola queue, pastikan konfiguras
             'timeout' => 60,
         ],
     ],
-    
+
     'local' => [
         'supervisor-1' => [
             'connection' => 'redis',
@@ -857,18 +855,18 @@ class ReindexTypesense extends Command
     public function handle()
     {
         $this->info('Starting Typesense reindexing...');
-        
+
         // Recreate schema
         $this->call('typesense:create-schema');
-        
+
         // Reindex data
         $this->info('Reindexing Barang model...');
         $this->call('scout:import', [
             'model' => Barang::class,
         ]);
-        
+
         $this->info('Reindexing completed successfully!');
-        
+
         return 0;
     }
 }
@@ -956,4 +954,3 @@ Beberapa keuntungan menggunakan Typesense:
 4. **Integrasi Mudah**: Terintegrasi dengan baik dengan Laravel melalui Scout
 
 Untuk informasi lebih lanjut, kunjungi [dokumentasi resmi Typesense](https://typesense.org/docs/).
-

@@ -17,6 +17,7 @@
   - Timestamps
 
 ### Status Order (`status_order`)
+
 - 1: draft
 - 2: menunggu persetujuan
 - 3: disetujui
@@ -26,6 +27,7 @@
 - 9: dibatalkan
 
 ### Status Pembayaran (`status_pembayaran`)
+
 - 1: hutang
 - 2: lunas
 
@@ -85,6 +87,7 @@
 ## 6. Migrasi Penambahan Kolom
 
 **Contoh migrasi penambahan status batal dan alasan batal:**
+
 ```php
 $table->string('status_order', 2)
     ->default('1')
@@ -94,6 +97,7 @@ $table->string('alasan_batal')->nullable()->after('status_order')->comment('Alas
 ```
 
 **Contoh migrasi tracking pengiriman:**
+
 ```php
 $table->timestamp('tanggal_kirim')->nullable()->after('status_order')->comment('Tanggal order dikirim ke pelanggan');
 $table->timestamp('tanggal_terima')->nullable()->after('tanggal_kirim')->comment('Tanggal order diterima pelanggan');

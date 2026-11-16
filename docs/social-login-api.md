@@ -24,10 +24,10 @@ POST /auth/email/login
 
 ##### Request Body
 
-| Field    | Type   | Description                |
-|----------|--------|----------------------------|
-| email    | string | Email pengguna             |
-| password | string | Password pengguna          |
+| Field    | Type   | Description       |
+| -------- | ------ | ----------------- |
+| email    | string | Email pengguna    |
+| password | string | Password pengguna |
 
 ##### Response
 
@@ -66,13 +66,13 @@ POST /auth/email/register
 
 ##### Request Body
 
-| Field                | Type   | Description                                |
-|----------------------|--------|--------------------------------------------|
-| nama                 | string | Nama lengkap pengguna                      |
-| email                | string | Email pengguna (harus unik)                |
-| username             | string | Username pengguna (harus unik)             |
-| password             | string | Password pengguna (minimal 6 karakter)     |
-| password_confirmation| string | Konfirmasi password (harus sama)           |
+| Field                 | Type   | Description                            |
+| --------------------- | ------ | -------------------------------------- |
+| nama                  | string | Nama lengkap pengguna                  |
+| email                 | string | Email pengguna (harus unik)            |
+| username              | string | Username pengguna (harus unik)         |
+| password              | string | Password pengguna (minimal 6 karakter) |
+| password_confirmation | string | Konfirmasi password (harus sama)       |
 
 ##### Response
 
@@ -102,11 +102,11 @@ POST /auth/email/set-password
 
 ##### Request Body
 
-| Field                | Type   | Description                                |
-|----------------------|--------|--------------------------------------------|
-| email                | string | Email pengguna                             |
-| password             | string | Password baru (minimal 6 karakter)         |
-| password_confirmation| string | Konfirmasi password (harus sama)           |
+| Field                 | Type   | Description                        |
+| --------------------- | ------ | ---------------------------------- |
+| email                 | string | Email pengguna                     |
+| password              | string | Password baru (minimal 6 karakter) |
+| password_confirmation | string | Konfirmasi password (harus sama)   |
 
 ##### Response
 
@@ -136,9 +136,9 @@ POST /auth/email/logout
 
 ##### Headers
 
-| Header        | Value                                |
-|---------------|--------------------------------------|
-| Authorization | Bearer {token}                       |
+| Header        | Value          |
+| ------------- | -------------- |
+| Authorization | Bearer {token} |
 
 ##### Response
 
@@ -159,9 +159,9 @@ GET /auth/me
 
 ##### Headers
 
-| Header        | Value                                |
-|---------------|--------------------------------------|
-| Authorization | Bearer {token}                       |
+| Header        | Value          |
+| ------------- | -------------- |
+| Authorization | Bearer {token} |
 
 ##### Response
 
@@ -191,9 +191,9 @@ GET /auth/{provider}/redirect-url
 
 ##### Parameters
 
-| Parameter | Type   | Description                                |
-|-----------|--------|--------------------------------------------|
-| provider  | string | Provider OAuth (google, github)            |
+| Parameter | Type   | Description                     |
+| --------- | ------ | ------------------------------- |
+| provider  | string | Provider OAuth (google, github) |
 
 ##### Response
 
@@ -214,9 +214,9 @@ GET /auth/{provider}/redirect
 
 ##### Parameters
 
-| Parameter | Type   | Description                                |
-|-----------|--------|--------------------------------------------|
-| provider  | string | Provider OAuth (google, github)            |
+| Parameter | Type   | Description                     |
+| --------- | ------ | ------------------------------- |
+| provider  | string | Provider OAuth (google, github) |
 
 ##### Response
 
@@ -232,9 +232,9 @@ GET /auth/{provider}/callback
 
 ##### Parameters
 
-| Parameter | Type   | Description                                |
-|-----------|--------|--------------------------------------------|
-| provider  | string | Provider OAuth (google, github)            |
+| Parameter | Type   | Description                     |
+| --------- | ------ | ------------------------------- |
+| provider  | string | Provider OAuth (google, github) |
 
 ##### Response
 
@@ -257,34 +257,34 @@ const loginWithEmail = async (email, password) => {
     const response = await axios.post('/api/v2/auth/email/login', {
       email,
       password
-    });
-    
+    })
+
     // Simpan token dan data user
-    localStorage.setItem('token', response.data.token);
-    localStorage.setItem('user', JSON.stringify(response.data.user));
-    
+    localStorage.setItem('token', response.data.token)
+    localStorage.setItem('user', JSON.stringify(response.data.user))
+
     // Redirect ke dashboard
-    navigate('/dashboard');
+    navigate('/dashboard')
   } catch (error) {
-    console.error('Error:', error.response?.data?.message || error.message);
+    console.error('Error:', error.response?.data?.message || error.message)
   }
-};
+}
 
 // Fungsi untuk registrasi dengan email
-const registerWithEmail = async (userData) => {
+const registerWithEmail = async userData => {
   try {
-    const response = await axios.post('/api/v2/auth/email/register', userData);
-    
+    const response = await axios.post('/api/v2/auth/email/register', userData)
+
     // Simpan token dan data user
-    localStorage.setItem('token', response.data.token);
-    localStorage.setItem('user', JSON.stringify(response.data.user));
-    
+    localStorage.setItem('token', response.data.token)
+    localStorage.setItem('user', JSON.stringify(response.data.user))
+
     // Redirect ke dashboard
-    navigate('/dashboard');
+    navigate('/dashboard')
   } catch (error) {
-    console.error('Error:', error.response?.data?.message || error.message);
+    console.error('Error:', error.response?.data?.message || error.message)
   }
-};
+}
 ```
 
 #### Login dengan Google
@@ -294,35 +294,35 @@ const registerWithEmail = async (userData) => {
 const loginWithGoogle = async () => {
   try {
     // Dapatkan URL redirect
-    const response = await axios.get('/api/v2/auth/google/redirect-url');
-    
+    const response = await axios.get('/api/v2/auth/google/redirect-url')
+
     // Redirect ke URL provider OAuth
-    window.location.href = response.data.redirect_url;
+    window.location.href = response.data.redirect_url
   } catch (error) {
-    console.error('Error:', error);
+    console.error('Error:', error)
   }
-};
+}
 
 // Halaman callback untuk menerima token setelah login
 const SocialCallback = () => {
   useEffect(() => {
     // Ambil token dan data user dari URL
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get('token');
-    const userData = JSON.parse(decodeURIComponent(params.get('user')));
-    
+    const params = new URLSearchParams(window.location.search)
+    const token = params.get('token')
+    const userData = JSON.parse(decodeURIComponent(params.get('user')))
+
     if (token) {
       // Simpan token dan data user
-      localStorage.setItem('token', token);
-      localStorage.setItem('user', JSON.stringify(userData));
-      
+      localStorage.setItem('token', token)
+      localStorage.setItem('user', JSON.stringify(userData))
+
       // Redirect ke dashboard
-      navigate('/dashboard');
+      navigate('/dashboard')
     }
-  }, []);
-  
-  return <div>Loading...</div>;
-};
+  }, [])
+
+  return <div>Loading...</div>
+}
 ```
 
 ### Frontend (Vue)
@@ -336,34 +336,34 @@ const loginWithEmail = async (email, password) => {
     const response = await axios.post('/api/v2/auth/email/login', {
       email,
       password
-    });
-    
+    })
+
     // Simpan token dan data user
-    localStorage.setItem('token', response.data.token);
-    localStorage.setItem('user', JSON.stringify(response.data.user));
-    
+    localStorage.setItem('token', response.data.token)
+    localStorage.setItem('user', JSON.stringify(response.data.user))
+
     // Redirect ke dashboard
-    router.push('/dashboard');
+    router.push('/dashboard')
   } catch (error) {
-    console.error('Error:', error.response?.data?.message || error.message);
+    console.error('Error:', error.response?.data?.message || error.message)
   }
-};
+}
 
 // Fungsi untuk registrasi dengan email
-const registerWithEmail = async (userData) => {
+const registerWithEmail = async userData => {
   try {
-    const response = await axios.post('/api/v2/auth/email/register', userData);
-    
+    const response = await axios.post('/api/v2/auth/email/register', userData)
+
     // Simpan token dan data user
-    localStorage.setItem('token', response.data.token);
-    localStorage.setItem('user', JSON.stringify(response.data.user));
-    
+    localStorage.setItem('token', response.data.token)
+    localStorage.setItem('user', JSON.stringify(response.data.user))
+
     // Redirect ke dashboard
-    router.push('/dashboard');
+    router.push('/dashboard')
   } catch (error) {
-    console.error('Error:', error.response?.data?.message || error.message);
+    console.error('Error:', error.response?.data?.message || error.message)
   }
-};
+}
 ```
 
 #### Login dengan Google
@@ -373,30 +373,30 @@ const registerWithEmail = async (userData) => {
 const loginWithGoogle = async () => {
   try {
     // Dapatkan URL redirect
-    const response = await axios.get('/api/v2/auth/google/redirect-url');
-    
+    const response = await axios.get('/api/v2/auth/google/redirect-url')
+
     // Redirect ke URL provider OAuth
-    window.location.href = response.data.redirect_url;
+    window.location.href = response.data.redirect_url
   } catch (error) {
-    console.error('Error:', error);
+    console.error('Error:', error)
   }
-};
+}
 
 // Halaman callback untuk menerima token setelah login
 // Di dalam setup() atau mounted()
 onMounted(() => {
   // Ambil token dan data user dari URL
-  const params = new URLSearchParams(window.location.search);
-  const token = params.get('token');
-  const userData = JSON.parse(decodeURIComponent(params.get('user')));
-  
+  const params = new URLSearchParams(window.location.search)
+  const token = params.get('token')
+  const userData = JSON.parse(decodeURIComponent(params.get('user')))
+
   if (token) {
     // Simpan token dan data user
-    localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify(userData));
-    
+    localStorage.setItem('token', token)
+    localStorage.setItem('user', JSON.stringify(userData))
+
     // Redirect ke dashboard
-    router.push('/dashboard');
+    router.push('/dashboard')
   }
-});
+})
 ```

@@ -1,5 +1,15 @@
 {
+  "name": "belakang-toko",
+  "version": "1.0.0",
   "private": true,
+  "description": "CARA MENJALANKANNYA",
+  "keywords": [],
+  "license": "ISC",
+  "author": "",
+  "directories": {
+    "test": "tests"
+  },
+  "main": "vite.config.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build"
@@ -8,15 +18,5 @@
     "axios": "^1.1.2",
     "laravel-vite-plugin": "^0.7.2",
     "vite": "^4.0.0"
-  },
-  "name": "belakang-toko",
-  "description": "CARA MENJALANKANNYA",
-  "version": "1.0.0",
-  "main": "vite.config.js",
-  "directories": {
-    "test": "tests"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC"
+  }
 }

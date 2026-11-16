@@ -4,11 +4,11 @@ CARA MENJALANKANNYA
 
 ## Daftar Isi
 
--   [Setup](#setup)
-    -   [1. Copy files](#step-1-copy-files-in-your-directory)
-    -   [2. Execute Docker](#step-2-execute-docker)
-    -   [3. Run Composer](#step-3-install-composer-dependencies)
--   [Enhancements](#enhancements)
+- [Setup](#setup)
+  - [1. Copy files](#step-1-copy-files-in-your-directory)
+  - [2. Execute Docker](#step-2-execute-docker)
+  - [3. Run Composer](#step-3-install-composer-dependencies)
+- [Enhancements](#enhancements)
 
 # Setup
 

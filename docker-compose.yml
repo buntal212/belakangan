@@ -26,7 +26,6 @@ services:
     depends_on:
       - redis
 
-
   # DATABASE DOCKER DISABLED
   # Laravel menggunakan database external:
   # host.docker.internal:3306
@@ -53,7 +52,6 @@ services:
   #   networks:
   #     - kentangnet
 
-
   nginx:
     image: nginx:alpine
     container_name: nginx_tokobangunan
@@ -63,7 +61,7 @@ services:
       - app
 
     ports:
-      - "8183:80"
+      - '8183:80'
 
     volumes:
       - ./:/var/www:ro
@@ -72,7 +70,6 @@ services:
 
     networks:
       - kentangnet
-
 
   redis:
     image: redis:7
@@ -83,18 +80,17 @@ services:
       - redis_data:/data
 
     ports:
-      - "26739:6379"
+      - '26739:6379'
 
     networks:
       - kentangnet
-
 
   scheduler:
     image: belakang-toko-app
     container_name: belakang-toko-scheduler
     restart: unless-stopped
 
-    command: ["php", "artisan", "schedule:work"]
+    command: ['php', 'artisan', 'schedule:work']
 
     depends_on:
       - app
@@ -111,12 +107,10 @@ services:
     networks:
       - kentangnet
 
-
 volumes:
   redis_data:
   laravel_storage:
   laravel_cache:
-
 
 networks:
   kentangnet:

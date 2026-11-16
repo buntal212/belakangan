@@ -738,7 +738,9 @@ class PenjualanController extends Controller
                 ]);
             }
 
-            $dpp = max(0.0, round($subtotalBarang - $diskonNota, 2));
+            // Harga barang adalah harga jual termasuk PPN. Diskon nota juga
+            // mengurangi total yang sudah termasuk PPN.
+            $totalTermasukPpn = max(0.0, round($subtotalBarang - $diskonNota, 2));
 
             $kenaPpn = $request->has('kena_ppn')
                 ? filter_var($request->input('kena_ppn'), FILTER_VALIDATE_BOOLEAN)
@@ -750,7 +752,8 @@ class PenjualanController extends Controller
                 $ppnPersen = 0.0;
             }
 
-            $nilaiPenjualan = PpnHelper::hitung($dpp, $ppnPersen);
+            $nilaiPenjualan = PpnHelper::hitungTermasukPpn($totalTermasukPpn, $ppnPersen);
+            $dpp = $nilaiPenjualan['dpp'];
             $ppnNominal = $nilaiPenjualan['ppn_nominal'];
             $total = $nilaiPenjualan['total'];
             $totalDiskonDetail = (float) DetailPenjualan::where('no_penjualan', $data->no_penjualan)->sum('diskon');
@@ -843,6 +846,7 @@ class PenjualanController extends Controller
                 'total_diskon' => $totalDiskonDetail,
                 'ppn_persen' => $ppnPersen,
                 'ppn_nominal' => $ppnNominal,
+                'ppn_termasuk' => $kenaPpn,
                 'total' => $total,
                 'bayar' => $bayar,
                 'kembali' => $kembali,

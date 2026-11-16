@@ -5,6 +5,7 @@
 ### 1. Token Berbasis Database (Personal Access Tokens)
 
 Ini adalah token API tradisional yang:
+
 - Disimpan dalam tabel `personal_access_tokens`
 - Dibuat dengan metode `createToken()`
 - Digunakan untuk autentikasi API dengan header `Authorization: Bearer {token}`
@@ -13,6 +14,7 @@ Ini adalah token API tradisional yang:
 ### 2. Token Sementara (TransientToken)
 
 `TransientToken` adalah objek yang:
+
 - **Tidak disimpan dalam database**
 - Dibuat secara otomatis oleh Sanctum saat autentikasi berbasis cookie/session
 - Digunakan saat SPA (Single Page Application) mengakses API melalui cookie
@@ -30,17 +32,18 @@ Dalam kasus ini, Sanctum secara otomatis membuat `TransientToken` untuk request 
 
 ### Perbedaan Utama
 
-| Personal Access Token | TransientToken |
-|-----------------------|----------------|
-| Disimpan di database | Tidak disimpan di database |
-| Perlu dikirim dalam header | Menggunakan cookie session |
-| Memiliki metode `delete()` | Tidak memiliki metode `delete()` |
-| Dapat memiliki abilities/scopes | Memiliki semua abilities |
-| Dapat kedaluwarsa | Mengikuti sesi Laravel |
+| Personal Access Token           | TransientToken                   |
+| ------------------------------- | -------------------------------- |
+| Disimpan di database            | Tidak disimpan di database       |
+| Perlu dikirim dalam header      | Menggunakan cookie session       |
+| Memiliki metode `delete()`      | Tidak memiliki metode `delete()` |
+| Dapat memiliki abilities/scopes | Memiliki semua abilities         |
+| Dapat kedaluwarsa               | Mengikuti sesi Laravel           |
 
 ### Implikasi untuk Logout
 
 Saat melakukan logout:
+
 - Untuk Personal Access Token: Perlu menghapus token dari database
 - Untuk TransientToken: Cukup menghapus session Laravel (tidak perlu menghapus token)
 

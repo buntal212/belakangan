@@ -1,6 +1,7 @@
 # Panduan Optimasi Server Produksi (2 CPU, 2GB RAM)
 
 ## Daftar Isi
+
 - [Optimasi MySQL 5.7](#optimasi-mysql-57)
 - [Optimasi PHP-FPM](#optimasi-php-fpm)
 - [Optimasi Typesense](#optimasi-typesense)
@@ -354,7 +355,6 @@ Jadwalkan dengan cron:
 */10 * * * * /www/server/scripts/monitor.sh
 ```
 
-
 ## Optimasi OPcache
 
 OPcache meningkatkan performa PHP dengan menyimpan script yang sudah dikompilasi di memory, menghilangkan kebutuhan untuk membaca dan parsing script PHP setiap request.
@@ -475,10 +475,10 @@ Jika Anda menggunakan GitHub Actions untuk deployment, tambahkan langkah reset O
 jobs:
   deploy:
     # ... langkah deployment lainnya ...
-    
+
     - name: Deploy to server
       # ... perintah deployment ...
-    
+
     - name: Reset OPcache
       run: |
         ssh user@your-server "php /www/server/scripts/reset-opcache.php"
@@ -513,6 +513,7 @@ echo "Deployment completed at $(date)" >> /www/server/logs/deployment.log
 ```
 
 Jadikan script executable:
+
 ```bash
 chmod +x /www/server/scripts/post-deploy.sh
 ```
@@ -528,19 +529,20 @@ Route::post('deployment-webhook', function (Request $request) {
     if ($request->header('X-Deployment-Token') !== env('DEPLOYMENT_SECRET_TOKEN')) {
         return response()->json(['error' => 'Unauthorized'], 401);
     }
-    
+
     // Reset OPcache
     if (function_exists('opcache_reset')) {
         opcache_reset();
         Log::info('OPcache reset via webhook');
         return response()->json(['status' => 'OPcache reset successful']);
     }
-    
+
     return response()->json(['status' => 'OPcache not available'], 500);
 })->middleware('throttle:10,1');
 ```
 
 Kemudian panggil webhook ini dari sistem CI/CD Anda:
+
 ```bash
 curl -X POST https://your-domain.com/api/deployment-webhook \
   -H "X-Deployment-Token: your-secret-token"
@@ -562,34 +564,37 @@ Untuk lingkungan development, Anda bisa menggunakan file watcher untuk reset OPc
 
 ```javascript
 // watcher.js
-const chokidar = require('chokidar');
-const { exec } = require('child_process');
+const chokidar = require('chokidar')
+const { exec } = require('child_process')
 
 // Pantau perubahan file PHP
-const watcher = chokidar.watch([
+const watcher = chokidar.watch(
+  [
     './app/**/*.php',
     './config/**/*.php',
     './routes/**/*.php',
     './resources/views/**/*.php'
-], {
+  ],
+  {
     ignored: /node_modules/,
     persistent: true
-});
+  }
+)
 
-console.log('OPcache watcher started...');
+console.log('OPcache watcher started...')
 
 watcher
-    .on('change', (path) => {
-        console.log(`File ${path} changed. Resetting OPcache...`);
-        exec('php /www/server/scripts/reset-opcache.php', (err, stdout, stderr) => {
-            if (err) {
-                console.error(`Error resetting OPcache: ${err.message}`);
-                return;
-            }
-            console.log(`OPcache reset: ${stdout}`);
-        });
+  .on('change', path => {
+    console.log(`File ${path} changed. Resetting OPcache...`)
+    exec('php /www/server/scripts/reset-opcache.php', (err, stdout, stderr) => {
+      if (err) {
+        console.error(`Error resetting OPcache: ${err.message}`)
+        return
+      }
+      console.log(`OPcache reset: ${stdout}`)
     })
-    .on('error', (error) => console.error(`Watcher error: ${error}`));
+  })
+  .on('error', error => console.error(`Watcher error: ${error}`))
 ```
 
 ### 6. Cron Job untuk Reset Periodik
@@ -647,8 +652,8 @@ while (true) {
         // Reset OPcache saat proses Octane dimulai ulang
         if (function_exists('opcache_reset')) {
             opcache_reset();
-            file_put_contents('/www/server/logs/opcache-reset.log', 
-                date('Y-m-d H:i:s') . " - OPcache reset triggered by Supervisor restart\n", 
+            file_put_contents('/www/server/logs/opcache-reset.log',
+                date('Y-m-d H:i:s') . " - OPcache reset triggered by Supervisor restart\n",
                 FILE_APPEND);
         }
     }

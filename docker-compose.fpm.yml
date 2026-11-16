@@ -1,4 +1,4 @@
-version: "3.8"
+version: '3.8'
 
 services:
   app:
@@ -11,7 +11,7 @@ services:
     working_dir: /var/www/
     restart: unless-stopped
     ports:
-      - "8001:8000"
+      - '8001:8000'
     environment:
       - COMPOSER_MEMORY_LIMIT=-1
     volumes:
@@ -24,7 +24,7 @@ services:
     container_name: nginx_tokobangunan
     restart: unless-stopped
     ports:
-      - "8182:8000"
+      - '8182:8000'
     volumes:
       - ./:/var/www
       - ./docker-compose/nginx:/etc/nginx/conf.d

@@ -491,9 +491,16 @@ class ReturPenjualanController extends Controller
             return;
         }
 
-        $subtotalNota = (float) ($penjualan->subtotal > 0 ? $penjualan->subtotal : $penjualan->detail->sum('subtotal'));
+        // Nota baru menyimpan harga jual termasuk PPN. Nota lama tetap memakai
+        // rumus PPN exclude agar nominal retur historis tidak berubah.
+        $ppnTermasuk = (bool) ($penjualan->ppn_termasuk ?? false);
+        $subtotalNota = $ppnTermasuk
+            ? (float) $penjualan->detail->sum('subtotal')
+            : (float) ($penjualan->subtotal > 0 ? $penjualan->subtotal : $penjualan->detail->sum('subtotal'));
         if ($subtotalNota <= 0) {
-            $subtotalNota = (float) $penjualan->total;
+            $subtotalNota = $ppnTermasuk
+                ? (float) $penjualan->total + (float) ($penjualan->diskon_kuitansi ?? 0)
+                : (float) $penjualan->total;
         }
 
         $diskonNota = (float) ($penjualan->diskon_kuitansi ?? 0);
@@ -533,7 +540,9 @@ class ReturPenjualanController extends Controller
         if ($isSisaTerakhir) {
             // Sisa alokasi terakhir untuk mencegah selisih pembulatan (Rule 5)
             $diskonRetur = max(0.0, round($diskonNota - $diskonSelesaiLain, 2));
-            $dppRetur = max(0.0, round(($subtotalNota - $diskonNota) - $dppSelesaiLain, 2));
+            $dppRetur = $ppnTermasuk
+                ? max(0.0, round((float) $penjualan->subtotal - $dppSelesaiLain, 2))
+                : max(0.0, round(($subtotalNota - $diskonNota) - $dppSelesaiLain, 2));
             $ppnRetur = max(0.0, round($ppnNominal - $ppnSelesaiLain, 2));
             $totalRetur = max(0.0, round($totalNota - $totalSelesaiLain, 2));
         } else {
@@ -542,19 +551,32 @@ class ReturPenjualanController extends Controller
             $sisaDiskonBoleh = max(0.0, round($diskonNota - $diskonSelesaiLain, 2));
             $diskonRetur = min($sisaDiskonBoleh, round($diskonNota * $rasio, 2));
 
-            $dppRetur = max(0.0, round($subtotalRetur - $diskonRetur, 2));
-
             $sisaPpnBoleh = max(0.0, round($ppnNominal - $ppnSelesaiLain, 2));
-            if ($ppnPersen > 0) {
+            $sisaTotalBoleh = max(0.0, round($totalNota - $totalSelesaiLain, 2));
+
+            if ($ppnTermasuk) {
+                $totalRetur = min($sisaTotalBoleh, max(0.0, round($subtotalRetur - $diskonRetur, 2)));
+                $dppRetur = $ppnPersen > 0
+                    ? min(
+                        max(0.0, round((float) $penjualan->subtotal - $dppSelesaiLain, 2)),
+                        round($totalRetur / (1 + ($ppnPersen / 100)), 2)
+                    )
+                    : $totalRetur;
+                $ppnRetur = min($sisaPpnBoleh, max(0.0, round($totalRetur - $dppRetur, 2)));
+            } else if ($ppnPersen > 0) {
+                $dppRetur = max(0.0, round($subtotalRetur - $diskonRetur, 2));
                 $ppnRetur = min($sisaPpnBoleh, round($dppRetur * ($ppnPersen / 100), 2));
             } else if ($ppnNominal > 0 && ($subtotalNota - $diskonNota) > 0) {
+                $dppRetur = max(0.0, round($subtotalRetur - $diskonRetur, 2));
                 $ppnRetur = min($sisaPpnBoleh, round($ppnNominal * ($dppRetur / ($subtotalNota - $diskonNota)), 2));
             } else {
+                $dppRetur = max(0.0, round($subtotalRetur - $diskonRetur, 2));
                 $ppnRetur = 0.0;
             }
 
-            $sisaTotalBoleh = max(0.0, round($totalNota - $totalSelesaiLain, 2));
-            $totalRetur = min($sisaTotalBoleh, round($dppRetur + $ppnRetur, 2));
+            if (!$ppnTermasuk) {
+                $totalRetur = min($sisaTotalBoleh, round($dppRetur + $ppnRetur, 2));
+            }
         }
 
         $headRetur->update([
