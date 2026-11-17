@@ -77,6 +77,7 @@ class BarangController extends Controller
                             'penerimaan_r.isi',
                             'penerimaan_r.satuan_k',
                             'penerimaan_r.satuan_b',
+                            'penerimaan_r.harga_beli_k as hpp',
                             'penerimaan_r.motif'
                         );
                 },
@@ -100,6 +101,7 @@ class BarangController extends Controller
                             'barangs.satuan_k',
                             'barangs.satuan_b',
                             'barangs.isi',
+                            'detail_penjualan_fifos.harga_beli as hpp',
                             'stoks.motif as motif'
                         );
                 },
@@ -266,6 +268,7 @@ class BarangController extends Controller
                         'kredit' => 0,
                         'satuan_k' => $penerimaan->satuan_k,
                         'satuan_b' => $penerimaan->satuan_b,
+                        'hpp' => floatval($penerimaan->hpp ?? 0),
                         'seri' => $penerimaan->motif,
                         'isi' => floatval($penerimaan->isi),
                         'create' => $penerimaan->created_at
@@ -283,6 +286,7 @@ class BarangController extends Controller
                         'kredit' => floatval($penjualan->pengeluaran),
                         'satuan_k' => $penjualan->satuan_k,
                         'satuan_b' => $penjualan->satuan_b,
+                        'hpp' => floatval($penjualan->hpp ?? 0),
                         'seri' => $penjualan->motif,
                         'isi' => floatval($penjualan->isi),
                         'create' => $penjualan->created_at
@@ -301,6 +305,7 @@ class BarangController extends Controller
                         'kredit' => 0,
                         'satuan_k' => $retur->satuan_k,
                         'satuan_b' => $retur->satuan_b,
+                        'hpp' => 0,
                         'seri' => $retur->motif,
                         'isi' => floatval($item->isi),
                         'create' => $retur->created_at
@@ -318,6 +323,7 @@ class BarangController extends Controller
                         'kredit' => floatval($pengembalian->pengeluaran),
                         'satuan_k' => $item->satuan_k,
                         'satuan_b' => $item->satuan_b,
+                        'hpp' => 0,
                         'seri' => $pengembalian->motif,
                         'isi' => floatval($item->isi),
                         'create' => $pengembalian->created_at
@@ -344,6 +350,7 @@ class BarangController extends Controller
                         'satuan_k' => $item->satuan_k,
                         'satuan_b' => $item->satuan_b,
                         'isi' => floatval($item->isi),
+                        'hpp' => floatval($penyesuaian->harga_beli_k ?? 0),
                         'create' => $penyesuaian->created_at
                     ];
                 }
@@ -366,6 +373,7 @@ class BarangController extends Controller
                 'satuan_b' => $item->satuan_b ?? '',
                 'seri' => $seri, // Tambahkan seri berdasarkan request('x')
                 'isi' => floatval($item->isi ?? 1),
+                'hpp' => 0,
             ]);
 
             $item->transaksi = $transaksi;
