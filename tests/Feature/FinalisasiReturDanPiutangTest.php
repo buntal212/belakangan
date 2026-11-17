@@ -283,6 +283,62 @@ class FinalisasiReturDanPiutangTest extends TestCase
     }
 
     /**
+     * Harga jual pada nota baru sudah termasuk PPN; retur tidak boleh
+     * menambahkan PPN kedua kali ke nilai yang dikembalikan ke pelanggan.
+     */
+    public function test_retur_sebagian_pada_nota_dengan_harga_termasuk_ppn_tidak_menambah_ppn_lagi()
+    {
+        $barang = $this->createBarang();
+
+        // Nota: 1 PCS seharga 400.000 (sudah termasuk PPN 11%).
+        $penjualan = $this->createPenjualan([
+            'subtotal' => 360360.36,
+            'ppn_persen' => 11,
+            'ppn_nominal' => 39639.64,
+            'ppn_termasuk' => true,
+            'total' => 400000,
+            'flag' => '2',
+        ]);
+
+        $detailJual = DetailPenjualan::create([
+            'no_penjualan' => $penjualan->no_penjualan,
+            'kodebarang' => $barang->kodebarang,
+            'jumlah' => 1,
+            'harga_jual' => 400000,
+            'diskon' => 0,
+            'subtotal' => 400000,
+        ]);
+
+        $retur = HeaderReturPenjualan::create([
+            'no_retur' => 'RET-PPN-IN-' . uniqid(),
+            'no_penjualan' => $penjualan->no_penjualan,
+            'tgl' => now()->format('Y-m-d H:i:s'),
+            'status' => '',
+        ]);
+
+        DetailReturPenjualan::create([
+            'header_retur_penjualan_id' => $retur->id,
+            'no_retur' => $retur->no_retur,
+            'kodebarang' => $barang->kodebarang,
+            'detail_penjualan_id' => $detailJual->id,
+            'jumlah' => 1,
+            'harga_jual' => 400000,
+            'diskon' => 0,
+            'subtotal' => 400000,
+            'total' => 400000,
+            'status' => '',
+        ]);
+
+        (new ReturPenjualanController())->selesai(new Request(['no_retur' => $retur->no_retur]));
+
+        $returFresh = HeaderReturPenjualan::where('no_retur', $retur->no_retur)->firstOrFail();
+
+        $this->assertEquals(360360.36, (float) $returFresh->dpp);
+        $this->assertEquals(39639.64, (float) $returFresh->ppn_nominal);
+        $this->assertEquals(400000.0, (float) $returFresh->total, 'PPN tidak boleh ditambahkan kembali ke harga inklusif.');
+    }
+
+    /**
      * Rule 5: Retur berulang dengan sisa alokasi terakhir (tidak melebihi total nota asli).
      */
     public function test_retur_berulang_akumulasi_total_tidak_melebihi_nilai_nota_asli()
