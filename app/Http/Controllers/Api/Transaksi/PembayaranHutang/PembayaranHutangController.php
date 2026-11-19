@@ -69,6 +69,7 @@ class PembayaranHutangController extends Controller
             }
         ])
         ->where('jenis_pembayaran', 'Hutang')
+        ->orwhere('jenis_pembayaran', 'Cash Tempo')
         // ->where('flagingHutang', null)->orwhere('flagingHutang', '')
         ->where('kdsupllier', request('kdsupplier'))
         ->orderBy('tgljatuhtempo', 'asc')
