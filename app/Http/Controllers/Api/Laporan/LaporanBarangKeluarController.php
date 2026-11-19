@@ -34,6 +34,7 @@ class LaporanBarangKeluarController extends Controller
             ->leftJoin('users as sales', 'sales.id', '=', 'penjualan.sales_id')
             ->whereNotNull('penjualan.flag')
             ->where('penjualan.flag', '<>', '6')
+            ->where('barang.kategori', 'keramik')
             ->whereBetween('fifo.created_at', [
                 $awal . ' 00:00:00',
                 $akhir . ' 23:59:59',
