@@ -68,8 +68,7 @@ class PembayaranHutangController extends Controller
                 $rincianpembayaranhutang->select('nopenerimaan', DB::raw('sum(total) as totalbayar'))->groupBy('nopenerimaan');
             }
         ])
-        ->where('jenis_pembayaran', 'Hutang')
-        ->orwhere('jenis_pembayaran', 'Cash Tempo')
+        ->whereIn('jenis_pembayaran', ['Hutang', 'Cash Tempo'])
         // ->where('flagingHutang', null)->orwhere('flagingHutang', '')
         ->where('kdsupllier', request('kdsupplier'))
         ->orderBy('tgljatuhtempo', 'asc')
