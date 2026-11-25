@@ -212,11 +212,15 @@ class DashboardController extends Controller
             ->leftJoin('pelanggans as pelanggan', 'pelanggan.id', '=', 'penjualan.pelanggan_id')
             ->leftJoinSub($cicilanPerNota, 'cicilan', fn ($join) => $join->on('cicilan.no_penjualan', '=', 'penjualan.no_penjualan'))
             ->leftJoinSub($returPerNota, 'retur', fn ($join) => $join->on('retur.no_penjualan', '=', 'penjualan.no_penjualan'))
-            ->whereIn('penjualan.flag', ['2', '3', '4', '7', '8'])
+            // Samakan cakupan piutang dengan dialog pembayaran piutang.
+            ->whereIn('penjualan.flag', ['2', '3', '7', '8'])
             ->whereNotNull('penjualan.tempo')
             ->whereDate('penjualan.tempo', '<=', $batasJatuhTempo)
             ->selectRaw("penjualan.no_penjualan, penjualan.tempo as jatuh_tempo, COALESCE(pelanggan.nama, 'Pelanggan umum') as pihak, GREATEST(penjualan.total - penjualan.bayar - COALESCE(cicilan.total_cicilan, 0) - COALESCE(retur.total_retur, 0), 0) as sisa")
-            ->whereRaw('COALESCE(penjualan.total, 0) - COALESCE(penjualan.bayar, 0) - COALESCE(cicilan.total_cicilan, 0) - COALESCE(retur.total_retur, 0) > 0')
+            // Nominal disimpan sebagai desimal. Bulatkan ke dua digit agar sisa
+            // pecahan sangat kecil akibat perhitungan tidak membuat nota lunas
+            // tetap muncul pada dashboard.
+            ->whereRaw('ROUND(COALESCE(penjualan.total, 0) - COALESCE(penjualan.bayar, 0) - COALESCE(cicilan.total_cicilan, 0) - COALESCE(retur.total_retur, 0), 2) >= 0.01')
             ->orderBy('penjualan.tempo')
             ->limit(8)
             ->get();
@@ -232,11 +236,14 @@ class DashboardController extends Controller
             ->leftJoin('suppliers as supplier', 'supplier.kodesupl', '=', 'penerimaan.kdsupllier')
             ->leftJoinSub($totalPenerimaan, 'nilai_hutang', fn ($join) => $join->on('nilai_hutang.nopenerimaan', '=', 'penerimaan.nopenerimaan'))
             ->leftJoinSub($pembayaranPerPenerimaan, 'pembayaran_hutang', fn ($join) => $join->on('pembayaran_hutang.nopenerimaan', '=', 'penerimaan.nopenerimaan'))
-            ->where('penerimaan.jenis_pembayaran', 'Hutang')
+            // Samakan jenis pembayaran dengan dialog pembayaran hutang.
+            ->whereIn('penerimaan.jenis_pembayaran', ['Hutang', 'Cash Tempo'])
             ->whereNotNull('penerimaan.tgljatuhtempo')
             ->whereDate('penerimaan.tgljatuhtempo', '<=', $batasJatuhTempo)
             ->selectRaw('penerimaan.nopenerimaan as nomor, penerimaan.tgljatuhtempo as jatuh_tempo, COALESCE(supplier.nama, penerimaan.kdsupllier) as pihak, GREATEST(COALESCE(nilai_hutang.total_hutang, 0) - COALESCE(pembayaran_hutang.total_dibayar, 0), 0) as sisa')
-            ->whereRaw('GREATEST(COALESCE(nilai_hutang.total_hutang, 0) - COALESCE(pembayaran_hutang.total_dibayar, 0), 0) > 0')
+            // Jangan tampilkan hutang yang sudah lunas, termasuk yang hanya
+            // menyisakan pecahan pembulatan di bawah satu sen.
+            ->whereRaw('ROUND(COALESCE(nilai_hutang.total_hutang, 0) - COALESCE(pembayaran_hutang.total_dibayar, 0), 2) >= 0.01')
             ->orderBy('penerimaan.tgljatuhtempo')
             ->limit(8)
             ->get();

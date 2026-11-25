@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\Laporan\LaporanPenjualanController;
 use App\Http\Controllers\Api\Laporan\LaporanAbsensiController;
 use App\Http\Controllers\Api\Laporan\LaporanBarangKeluarController;
 use App\Http\Controllers\Api\Laporan\LaporanPembayaranPiutangController;
+use App\Http\Controllers\Api\Laporan\LaporanSaldoPerPihakController;
 use Illuminate\Support\Facades\Route;
 
 Route::group([
@@ -77,4 +78,12 @@ Route::group([
 ], function () {
     Route::get('/getdata', [LaporanPembayaranPiutangController::class, 'getData']);
     Route::get('/pdf', [LaporanPembayaranPiutangController::class, 'downloadPdf']);
+});
+
+Route::group([
+    'middleware' => 'auth:api',
+    'prefix' => 'laporan/saldo-per-pihak'
+], function () {
+    Route::get('/hutang-per-distributor', [LaporanSaldoPerPihakController::class, 'hutangPerDistributor']);
+    Route::get('/piutang-per-pelanggan', [LaporanSaldoPerPihakController::class, 'piutangPerPelanggan']);
 });
